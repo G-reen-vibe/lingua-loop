@@ -32,7 +32,7 @@ export function FillGapFormat({ spec, onAnswer, disabled, feedback }: Props) {
     e?.preventDefault();
     if (disabled || value.trim() === "") return;
     const correct = value.trim().toLowerCase() === spec.answer.trim().toLowerCase();
-    onAnswer(correct, correct ? undefined : `Correct: ${spec.answer}`);
+    onAnswer(correct, correct ? undefined : `Correct: ${spec.fullAnswer}`);
   };
 
   // Split hint into parts: before underscores, underscores, after underscores

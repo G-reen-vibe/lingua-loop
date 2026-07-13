@@ -140,7 +140,8 @@ export interface FillGapSpec {
   format: "fill-gap";
   prompt: string;
   promptKey: AspectKey;
-  answer: string; // what the user types
+  answer: string; // what the user types (the blanked-out portion only)
+  fullAnswer: string; // the complete answer (for feedback display)
   hint: string; // partial hint with underscores for missing chars
   answerKey: AspectKey;
 }
@@ -552,17 +553,23 @@ export function genFillGap(
   const chars = answerToType.split("");
   if (chars.length < 2) return null;
   const gapCount = Math.max(2, Math.min(4, Math.floor(chars.length / 2)));
-  // Choose gap positions: prefer middle/end.
+  // Choose gap positions.
   const positions = chars.map((_, i) => i);
   const gapPositions = new Set(sample(positions, gapCount, rng));
   const hintChars = chars.map((c, i) => (gapPositions.has(i) ? "_" : c));
   const hint = shownPrefix + hintChars.join("") + shownSuffix;
 
+  // The user only types the blanked-out chars, in order.
+  const typedAnswer = chars
+    .filter((_, i) => gapPositions.has(i))
+    .join("");
+
   return {
     format: "fill-gap",
     prompt: promptValue,
     promptKey,
-    answer: answerToType,
+    answer: typedAnswer,
+    fullAnswer: answerValue,
     hint,
     answerKey,
   };
