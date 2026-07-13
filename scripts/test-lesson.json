@@ -1,0 +1,87 @@
+[
+  {
+    "word": "gato",
+    "definition": "un animal felino domestico",
+    "synonym": "=felino",
+    "translation": "cat",
+    "explanation": "A small domesticated carnivorous mammal",
+    "alt1": "gatos",
+    "sentences": [
+      {
+        "exert": "El [the] gato [cat] duerme [sleeps] en [on] el [the] sofá [sofa].",
+        "translation": "The cat sleeps on the sofa."
+      },
+      {
+        "exert": "Mi [my] gato [cat] es [is] negro [black].",
+        "translation": "My cat is black."
+      }
+    ]
+  },
+  {
+    "word": "perro",
+    "definition": "un animal canino domestico",
+    "synonym": "=can",
+    "translation": "dog",
+    "explanation": "A domesticated descendant of the wolf",
+    "alt1": "perros",
+    "sentences": [
+      {
+        "exert": "El [the] perro [dog] ladra [barks] fuerte [loudly].",
+        "translation": "The dog barks loudly."
+      }
+    ]
+  },
+  {
+    "word": "casa",
+    "definition": "un edificio para vivir",
+    "synonym": "=hogar",
+    "translation": "house",
+    "explanation": "A building that functions as a home",
+    "alt1": "casas",
+    "sentences": [
+      {
+        "exert": "La [the] casa [house] es [is] grande [big].",
+        "translation": "The house is big."
+      }
+    ]
+  },
+  {
+    "word": "agua",
+    "definition": "un liquido transparente esencial para la vida",
+    "synonym": "=liquido",
+    "translation": "water",
+    "explanation": "A transparent, odorless, tasteless liquid",
+    "sentences": [
+      {
+        "exert": "Bebo [I drink] agua [water] todos [every] los [the] días [days].",
+        "translation": "I drink water every day."
+      }
+    ]
+  },
+  {
+    "word": "pan",
+    "definition": "un alimento hecho de harina",
+    "synonym": "=alimento",
+    "translation": "bread",
+    "explanation": "A staple food prepared from dough",
+    "sentences": [
+      {
+        "exert": "El [the] pan [bread] está [is] caliente [hot].",
+        "translation": "The bread is hot."
+      }
+    ]
+  },
+  {
+    "word": "sol",
+    "definition": "la estrella del sistema solar",
+    "synonym": "=estrella",
+    "translation": "sun",
+    "explanation": "The star at the center of the Solar System",
+    "sentences": [
+      {
+        "exert": "El [the] sol [sun] brilla [shines] en [in] el [the] cielo [sky].",
+        "translation": "The sun shines in the sky."
+      }
+    ]
+  }
+]

@@ -30,8 +30,12 @@ import {
   genShellGame,
   genMemoryGrid,
 } from "@/lib/formats";
-import { wordsEligibleForFormat, wordsForIntroduction } from "@/lib/mastery";
-import { randomItem } from "@/lib/formats";
+import {
+  wordsEligibleForFormat,
+  wordsForIntroduction,
+  allFormatKinds,
+} from "@/lib/mastery";
+import { FORMAT_DIFFICULTY, WordProgress } from "@/lib/types";
 
 interface ActiveFormat {
   kind: FormatKind;
@@ -42,75 +46,110 @@ interface ActiveFormat {
   totalSubQuestions: number;
 }
 
+// Module-level helper: tries to generate a spec for a single format + word.
+function tryGenerate(
+  lesson: Lesson,
+  format: FormatKind,
+  wordProgress: WordProgress
+): QuestionSpec | null {
+  const word = lesson.words[wordProgress.wordIndex];
+  if (!word) return null;
+  const mastery = wordProgress.mastery;
+  switch (format) {
+    case "introduction":
+      return genIntroduction(word);
+    case "pick-answer":
+      return genPickAnswer(lesson, word, mastery);
+    case "spot-lie":
+      return genSpotLie(lesson, word, mastery);
+    case "word-scramble":
+      return genWordScramble(lesson, word, mastery);
+    case "fill-gap":
+      return genFillGap(lesson, word, mastery);
+    case "sentence-comprehension":
+      return genSentenceComprehension(lesson, word, mastery);
+    case "shell-game":
+      return genShellGame(lesson, word, mastery);
+    case "memory-grid":
+      return genMemoryGrid(lesson, word, mastery);
+    case "match-pairs":
+      // Match-pairs is handled separately (needs multiple words).
+      return null;
+  }
+}
+
 // Module-level helper: builds the next active format from the lesson + store picker.
+// Tries the store-suggested format first; if its generator fails, falls back to
+// other eligible formats so the session doesn't end prematurely.
 function buildActiveFormat(
   lesson: Lesson,
   lessonId: string,
-  pickSessionFormat: (lessonId: string) => FormatKind | null
+  pickSessionFormat: (lessonId: string) => FormatKind | null,
+  recentFormats: FormatKind[]
 ): ActiveFormat | null {
-  const format = pickSessionFormat(lessonId);
-  if (!format) return null;
+  // Try the store-suggested format first.
+  const suggested = pickSessionFormat(lessonId);
 
-  let words = wordsEligibleForFormat(lesson, format);
-  if (words.length === 0) {
-    if (format === "introduction") return null;
-    words = lesson.progress.filter((p) => p.seen);
-    if (words.length === 0) return null;
+  // Build a list of formats to try, in priority order.
+  const formatsToTry: FormatKind[] = [];
+  if (suggested) formatsToTry.push(suggested);
+
+  // Add all other formats as fallbacks (except introduction — only serve via suggestion).
+  for (const f of allFormatKinds()) {
+    if (f === "introduction") continue;
+    if (!formatsToTry.includes(f)) formatsToTry.push(f);
   }
 
-  const wordProgress = randomItem(words);
-  const word = lesson.words[wordProgress.wordIndex];
-  if (!word) return null;
-
-  let spec: QuestionSpec | null = null;
-  const mastery = wordProgress.mastery;
-
-  switch (format) {
-    case "introduction":
-      spec = genIntroduction(word);
-      break;
-    case "pick-answer":
-      spec = genPickAnswer(lesson, word, mastery);
-      break;
-    case "spot-lie":
-      spec = genSpotLie(lesson, word, mastery);
-      break;
-    case "match-pairs": {
-      const matchWords = words.map((wp) => lesson.words[wp.wordIndex]).filter(Boolean);
-      spec = genMatchPairs(lesson, matchWords, mastery);
-      break;
+  for (const format of formatsToTry) {
+    // For match-pairs, handle specially (needs multiple words).
+    if (format === "match-pairs") {
+      const eligible = wordsEligibleForFormat(lesson, format);
+      if (eligible.length < 3) continue; // match-pairs needs >= 3 words
+      const matchWords = eligible
+        .map((wp) => lesson.words[wp.wordIndex])
+        .filter(Boolean);
+      const mastery = eligible[0].mastery;
+      const spec = genMatchPairs(lesson, matchWords, mastery);
+      if (spec) {
+        return {
+          kind: format,
+          spec,
+          wordIndex: eligible[0].wordIndex,
+          subQuestionIndex: 0,
+          totalSubQuestions: 1,
+        };
+      }
+      continue;
     }
-    case "word-scramble":
-      spec = genWordScramble(lesson, word, mastery);
-      break;
-    case "fill-gap":
-      spec = genFillGap(lesson, word, mastery);
-      break;
-    case "sentence-comprehension":
-      spec = genSentenceComprehension(lesson, word, mastery);
-      break;
-    case "shell-game":
-      spec = genShellGame(lesson, word, mastery);
-      break;
-    case "memory-grid":
-      spec = genMemoryGrid(lesson, word, mastery);
-      break;
+
+    let words = wordsEligibleForFormat(lesson, format);
+    if (words.length === 0) {
+      if (format === "introduction") continue;
+      // Fallback: any seen word whose mastery >= format difficulty.
+      const diff = FORMAT_DIFFICULTY[format];
+      words = lesson.progress.filter((p) => p.seen && p.mastery >= diff);
+      if (words.length === 0) continue;
+    }
+
+    // Try up to 5 random words from the eligible pool.
+    const shuffled = [...words].sort(() => Math.random() - 0.5);
+    for (const wp of shuffled.slice(0, 5)) {
+      const spec = tryGenerate(lesson, format, wp);
+      if (spec) {
+        let totalSub = 1;
+        if (format === "shell-game") totalSub = 3;
+        return {
+          kind: format,
+          spec,
+          wordIndex: wp.wordIndex,
+          subQuestionIndex: 0,
+          totalSubQuestions: totalSub,
+        };
+      }
+    }
   }
 
-  if (!spec) return null;
-
-  let totalSub = 1;
-  if (format === "shell-game") {
-    totalSub = 3;
-  }
-
-  return {
-    kind: format,
-    spec,
-    wordIndex: wordProgress.wordIndex,
-    subQuestionIndex: 0,
-    totalSubQuestions: totalSub,
-  };
+  return null;
 }
 
 export function StudySession({ lessonId, mode }: { lessonId: string; mode: StudyMode }) {
@@ -125,14 +164,15 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
   const sessionIncorrect = useAppStore((s) => s.sessionIncorrect);
   const sessionLivesLeft = useAppStore((s) => s.sessionLives);
   const sessionEndAt = useAppStore((s) => s.sessionEndAt);
+  const sessionRecentFormats = useAppStore((s) => s.sessionRecentFormats);
 
   const lesson = data.lessons.find((l) => l.id === lessonId);
 
   // Build the initial active format lazily so we don't need an effect for it.
   const buildInitial = useCallback((): ActiveFormat | null => {
     if (!lesson) return null;
-    return buildActiveFormat(lesson, lessonId, pickSessionFormat);
-  }, [lesson, lessonId, pickSessionFormat]);
+    return buildActiveFormat(lesson, lessonId, pickSessionFormat, sessionRecentFormats);
+  }, [lesson, lessonId, pickSessionFormat, sessionRecentFormats]);
 
   const [active, setActive] = useState<ActiveFormat | null>(null);
   const [feedback, setFeedback] = useState<null | { correct: boolean; message?: string }>(null);
@@ -171,8 +211,8 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
   // Build the next format spec
   const buildNext = useCallback((): ActiveFormat | null => {
     if (!lesson) return null;
-    return buildActiveFormat(lesson, lessonId, pickSessionFormat);
-  }, [lesson, lessonId, pickSessionFormat]);
+    return buildActiveFormat(lesson, lessonId, pickSessionFormat, sessionRecentFormats);
+  }, [lesson, lessonId, pickSessionFormat, sessionRecentFormats]);
 
   const advance = useCallback(
     (currentActive: ActiveFormat | null, resultDone: boolean) => {

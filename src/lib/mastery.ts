@@ -168,6 +168,10 @@ export function dueWords(
 }
 
 // Returns words eligible for a given format based on mastery.
+// NOTE: We do NOT check isWordDue here. Within a study session, any seen word
+// whose mastery matches the format's difficulty is eligible. The algorithm's
+// due date is used for cross-session scheduling (which words to prioritize at
+// the start of a session), not for excluding words mid-session.
 export function wordsEligibleForFormat(
   lesson: Lesson,
   format: FormatKind,
@@ -178,12 +182,10 @@ export function wordsEligibleForFormat(
     return wordsForIntroduction(lesson);
   }
   // Format difficulty D requires word mastery >= D.
-  // Additionally, the word must be due.
   return lesson.progress.filter(
     (p) =>
       p.seen &&
-      p.mastery >= diff &&
-      isWordDue(p, lesson.settings.algorithm, now)
+      p.mastery >= diff
   );
 }
 
