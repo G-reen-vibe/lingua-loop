@@ -19,44 +19,47 @@ export function SentenceTranslationFormat({ spec, onAnswer, disabled, feedback }
     .map((t, i) => (t.blank ? i : -1))
     .filter((i) => i >= 0);
 
-  const [filled, setFilled] = useState<Record<number, string>>({});
-  const [usedOptions, setUsedOptions] = useState<Set<string>>(new Set());
+  // Track which option INDEX is placed in which blank INDEX.
+  // Using indices avoids ambiguity when duplicate values exist in options.
+  const [filled, setFilled] = useState<Record<number, number>>({}); // blankIdx -> optionIdx
+  const [usedOptionIndices, setUsedOptionIndices] = useState<Set<number>>(new Set());
   const [activeBlank, setActiveBlank] = useState<number | null>(blankIndices[0] ?? null);
 
-  const handleOptionClick = (option: string) => {
-    if (disabled || usedOptions.has(option) || activeBlank === null) return;
+  const handleOptionClick = (optionIdx: number) => {
+    if (disabled || usedOptionIndices.has(optionIdx) || activeBlank === null) return;
     playSound("click");
-    setFilled((prev) => ({ ...prev, [activeBlank]: option }));
-    setUsedOptions((prev) => new Set(prev).add(option));
-    const nextBlank = blankIndices.find((bi) => !filled[bi] && bi !== activeBlank);
+    setFilled((prev) => ({ ...prev, [activeBlank]: optionIdx }));
+    setUsedOptionIndices((prev) => new Set(prev).add(optionIdx));
+    const nextBlank = blankIndices.find((bi) => !(bi in filled) && bi !== activeBlank);
     setActiveBlank(nextBlank ?? null);
   };
 
   const handleBlankClick = (blankIdx: number) => {
     if (disabled) return;
-    if (filled[blankIdx]) {
+    if (blankIdx in filled) {
       playSound("click");
-      const option = filled[blankIdx];
+      const optionIdx = filled[blankIdx];
       const newFilled = { ...filled };
       delete newFilled[blankIdx];
       setFilled(newFilled);
-      setUsedOptions((prev) => {
+      setUsedOptionIndices((prev) => {
         const next = new Set(prev);
-        next.delete(option);
+        next.delete(optionIdx);
         return next;
       });
     }
     setActiveBlank(blankIdx);
   };
 
-  const allFilled = blankIndices.every((bi) => filled[bi]);
+  const allFilled = blankIndices.every((bi) => bi in filled);
 
   const handleSubmit = () => {
     if (!allFilled || disabled) return;
     let allCorrect = true;
     for (const bi of blankIndices) {
       const token = spec.tokens[bi];
-      if (filled[bi] !== token.answer) {
+      const optionIdx = filled[bi];
+      if (spec.options[optionIdx] !== token.answer) {
         allCorrect = false;
         break;
       }
@@ -95,7 +98,8 @@ export function SentenceTranslationFormat({ spec, onAnswer, disabled, feedback }
               );
             }
             const isActive = activeBlank === i;
-            const value = filled[i];
+            const optionIdx = filled[i];
+            const value = optionIdx !== undefined ? spec.options[optionIdx] : undefined;
             return (
               <button
                 key={i}
@@ -108,6 +112,7 @@ export function SentenceTranslationFormat({ spec, onAnswer, disabled, feedback }
                     ? "theme-border theme-bg-light"
                     : "border-dashed border-muted-foreground/40"
                 }`}
+                style={value || isActive ? { borderColor: "var(--theme-primary)" } : {}}
               >
                 {value || "___"}
               </button>
@@ -118,16 +123,16 @@ export function SentenceTranslationFormat({ spec, onAnswer, disabled, feedback }
         {/* Options */}
         <div className="flex flex-wrap justify-center gap-2">
           {spec.options.map((option, i) => {
-            const isUsed = usedOptions.has(option);
+            const isUsed = usedOptionIndices.has(i);
             return (
               <button
                 key={i}
-                onClick={() => handleOptionClick(option)}
+                onClick={() => handleOptionClick(i)}
                 disabled={disabled || isUsed}
                 className={`px-3 py-1.5 rounded-lg border-2 text-sm font-medium transition-colors ${
                   isUsed
                     ? "border-muted bg-muted/30 opacity-30"
-                    : "theme-border-hover border-theme-primary theme-bg-light hover:opacity-80"
+                    : "theme-border theme-bg-light hover:opacity-80"
                 }`}
                 style={!isUsed ? { borderColor: "var(--theme-primary)" } : {}}
               >

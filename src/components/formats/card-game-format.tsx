@@ -22,7 +22,6 @@ export function CardGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
     playSound("reveal");
     const t = setTimeout(() => {
       setPhase("hidden");
-      playSound("shuffle");
     }, 3500);
     return () => clearTimeout(t);
   }, [spec]);

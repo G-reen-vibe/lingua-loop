@@ -634,8 +634,9 @@ export function parseSentence(exert: string): { text: string; clean: string; tra
         }
       }
     } else {
-      // Regular word token.
-      const clean = t.replace(/[^\p{L}\p{N}]/gu, "");
+      // Regular word token. Strip leading/trailing punctuation but keep
+      // internal apostrophes and hyphens (e.g. "don't", "well-known").
+      const clean = t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
       tokens.push({ text: t, clean });
     }
   }
@@ -694,7 +695,9 @@ export function genSentenceComprehension(
     }
     // Decide whether to show the bracket translation.
     const m = wordMastery.get(t.clean) ?? -1;
-    const showTranslation = m >= 0 && m < 3;
+    // Show translation for unknown words (m === -1) and words below mastery 3.
+    // Hide for words with mastery >= 3.
+    const showTranslation = m < 3;
     return {
       text: t.text,
       clean: t.clean,
@@ -842,21 +845,16 @@ export function genMarbleGame(
     if (!unique.has(c.value)) unique.set(c.value, c);
   }
   const uniqueArr = Array.from(unique.values());
-  if (uniqueArr.length < 2) return null;
+  // Need at least 4 unique items for a meaningful game.
+  if (uniqueArr.length < 4) return null;
 
-  // We need N slots but may have fewer unique items. If so, we can't make
-  // a valid game (duplicate slots would be ambiguous). Return null and let
-  // the session controller fall back to another format.
-  if (uniqueArr.length < N) return null;
-
-  const slotCandidates = sample(uniqueArr, N, rng);
+  // Use as many slots as we have unique items, capped at N.
+  const slotCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
   const targetIdx = Math.floor(rng() * slotCandidates.length);
   const targetSlot = slotCandidates[targetIdx];
 
-  // Build answer options: the target slot's value + distractors from other words.
-  // The prompt is an aspect of the word; the user picks which slot it corresponds to.
-  // Since all slots are from the same word, the prompt = the target slot's value
-  // (same as shell game). Options = all slot values (the user picks one).
+  // Options = all slot values (shuffled). The user picks which item is in
+  // the slot the marble landed in.
   const options = shuffle(slotCandidates.map((s) => s.value), rng);
 
   return {
@@ -923,7 +921,9 @@ export function genSentenceTranslation(
     }
     const m = wordMastery.get(t.clean) ?? -1;
     // Words with mastery >= 3 (the requirement to reach difficulty 3) lose translations.
-    const showTranslation = m >= 0 && m < 3;
+    // Show translation for unknown words (m === -1) and words below mastery 3.
+    // Hide for words with mastery >= 3.
+    const showTranslation = m < 3;
     return {
       text: t.text,
       clean: t.clean,

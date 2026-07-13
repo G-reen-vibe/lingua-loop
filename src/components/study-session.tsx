@@ -34,6 +34,7 @@ import {
   genShellGame,
   genCardGame,
   genMarbleGame,
+  shuffle,
 } from "@/lib/formats";
 import { wordsEligibleForFormat, allFormatKinds } from "@/lib/mastery";
 import { FORMAT_DIFFICULTY, WordProgress } from "@/lib/types";
@@ -129,7 +130,7 @@ function buildActiveFormat(
     }
 
     // Try up to 5 random words from the eligible pool.
-    const shuffled = [...words].sort(() => Math.random() - 0.5);
+    const shuffled = shuffle(words);
     for (const wp of shuffled.slice(0, 5)) {
       const spec = tryGenerate(lesson, format, wp);
       if (spec) {

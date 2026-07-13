@@ -12,7 +12,7 @@ interface Props {
   feedback: null | { correct: boolean; message?: string };
 }
 
-type Phase = "memorize" | "dropping" | "landed" | "result";
+type Phase = "memorize" | "aiming" | "dropping" | "landed" | "result";
 
 interface MarblePos {
   x: number;
@@ -31,11 +31,16 @@ const WALL_BOUNCE = 0.6;
 export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
   const [phase, setPhase] = useState<Phase>("memorize");
   const [pickedOption, setPickedOption] = useState<string | null>(null);
-  const [marblePos, setMarblePos] = useState<MarblePos | null>(null);
   const [landedSlot, setLandedSlot] = useState<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Mutable refs for the animation loop (avoid re-creating effect each tick).
   const cannonAngleRef = useRef(0);
   const cannonDirRef = useRef(1);
+  const marbleRef = useRef<MarblePos | null>(null);
+  const phaseRef = useRef<Phase>("memorize");
+  const landedSlotRef = useRef<number | null>(null);
+  const dropStartRef = useRef(0);
 
   // Layout constants (in canvas coords).
   const WIDTH = 400;
@@ -46,7 +51,7 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
   const SLOT_COUNT = spec.slotItems.length;
   const slotWidth = WIDTH / SLOT_COUNT;
 
-  // Generate peg positions (grid of pegs) — memoized so it's stable per spec.
+  // Generate peg positions — memoized so it's stable per spec.
   const pegs = useMemo(() => {
     const rows = 6;
     const pegSpacingX = WIDTH / (Math.ceil(SLOT_COUNT / 2) + 1);
@@ -66,12 +71,17 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
     return result;
   }, [SLOT_COUNT, WIDTH, PEG_AREA_TOP, PEG_AREA_BOTTOM]);
 
+  // Keep phaseRef in sync.
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
   const getSlotAtX = (x: number) => {
     const idx = Math.floor(x / slotWidth);
     return Math.max(0, Math.min(SLOT_COUNT - 1, idx));
   };
 
-  // Draw the scene on the canvas. Must be declared before useEffects that use it.
+  // Draw the scene on the canvas.
   const drawScene = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -108,23 +118,26 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
     ctx.restore();
 
     // Draw marble if it exists.
-    if (marblePos) {
+    const mp = marbleRef.current;
+    if (mp) {
       ctx.fillStyle = "#ef4444";
       ctx.beginPath();
-      ctx.arc(marblePos.x, marblePos.y, MARBLE_RADIUS, 0, Math.PI * 2);
+      ctx.arc(mp.x, mp.y, MARBLE_RADIUS, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.4)";
       ctx.beginPath();
-      ctx.arc(marblePos.x - 2, marblePos.y - 2, 2, 0, Math.PI * 2);
+      ctx.arc(mp.x - 2, mp.y - 2, 2, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Draw slots at bottom.
-    const showSlotLabels = phase === "memorize" || phase === "landed" || phase === "result";
+    // Draw slots at bottom. Labels only shown during memorize and result phases
+    // (NOT during aiming/dropping/landed — so the user must remember).
+    const showSlotLabels = phaseRef.current === "memorize" || phaseRef.current === "result";
+    const ls = landedSlotRef.current;
     for (let i = 0; i < SLOT_COUNT; i++) {
       const sx = i * slotWidth;
       const sy = HEIGHT - SLOT_HEIGHT;
-      const isLanded = landedSlot === i;
+      const isLanded = ls === i;
       ctx.strokeStyle = isLanded ? themeColor : "#cbd5e1";
       ctx.lineWidth = isLanded ? 3 : 1;
       ctx.strokeRect(sx + 2, sy, slotWidth - 4, SLOT_HEIGHT - 5);
@@ -137,74 +150,34 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
         ctx.fillText(displayLabel, sx + slotWidth / 2, sy + SLOT_HEIGHT / 2 + 4);
       }
     }
-  }, [marblePos, phase, landedSlot, slotWidth, SLOT_COUNT, spec.slotItems, WIDTH, HEIGHT, SLOT_HEIGHT, pegs]);
+  }, [pegs, slotWidth, SLOT_COUNT, spec.slotItems, WIDTH, HEIGHT, SLOT_HEIGHT]);
 
-  const shootMarble = useCallback(() => {
-    playSound("drop");
-    const angle = cannonAngleRef.current;
-    const startX = WIDTH / 2 + Math.sin(angle) * 30;
-    const startY = 50;
-    const speed = 3;
-    setMarblePos({
-      x: startX,
-      y: startY,
-      vx: Math.sin(angle) * speed,
-      vy: Math.cos(angle) * speed,
-    });
-  }, [WIDTH]);
-
-  // Phase 1: memorize slots for 3s, then start dropping.
-  // State is initialized from the spec; the parent remounts this component
-  // (via key) whenever a new spec arrives, so initializers run fresh.
+  // Single long-lived animation loop: handles cannon rotation, marble physics,
+  // and redrawing. Runs for the lifetime of the component.
   useEffect(() => {
-    playSound("reveal");
-    const t = setTimeout(() => {
-      setPhase("dropping");
-      shootMarble();
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [spec, shootMarble]);
-
-  // Cannon rotation animation (only during dropping phase, before marble exists).
-  useEffect(() => {
-    if (phase !== "dropping" || marblePos) return;
     let raf: ReturnType<typeof requestAnimationFrame>;
+    let lastTickSound = 0;
+
     const tick = () => {
-      cannonAngleRef.current += cannonDirRef.current * 0.02;
-      const maxAngle = 0.5;
-      if (cannonAngleRef.current > maxAngle) {
-        cannonAngleRef.current = maxAngle;
-        cannonDirRef.current = -1;
-      } else if (cannonAngleRef.current < -maxAngle) {
-        cannonAngleRef.current = -maxAngle;
-        cannonDirRef.current = 1;
-      }
-      drawScene();
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [phase, marblePos, drawScene]);
+      const currentPhase = phaseRef.current;
 
-  // Physics simulation loop.
-  useEffect(() => {
-    if (!marblePos || phase !== "dropping") return;
-
-    const startTime = Date.now();
-    const step = () => {
-      // Safety: if marble has been dropping for > 8 seconds, force-land it.
-      if (Date.now() - startTime > 8000) {
-        const slot = Math.floor(Math.random() * SLOT_COUNT);
-        setLandedSlot(slot);
-        setPhase("landed");
-        playSound("drop");
-        return;
+      // Cannon rotation (during aiming phase, before marble is shot).
+      if (currentPhase === "aiming") {
+        cannonAngleRef.current += cannonDirRef.current * 0.025;
+        const maxAngle = 0.6;
+        if (cannonAngleRef.current > maxAngle) {
+          cannonAngleRef.current = maxAngle;
+          cannonDirRef.current = -1;
+        } else if (cannonAngleRef.current < -maxAngle) {
+          cannonAngleRef.current = -maxAngle;
+          cannonDirRef.current = 1;
+        }
       }
-      setMarblePos((prev) => {
-        if (!prev) return null;
-        let { x, y, vx, vy } = prev;
+
+      // Marble physics (during dropping phase).
+      if (currentPhase === "dropping" && marbleRef.current) {
+        let { x, y, vx, vy } = marbleRef.current;
         vy += GRAVITY;
-        // Cap velocity to prevent runaway.
         const maxV = 6;
         vx = Math.max(-maxV, Math.min(maxV, vx));
         vy = Math.max(-maxV, Math.min(maxV, vy));
@@ -220,6 +193,7 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
           vx = -vx * WALL_BOUNCE;
         }
 
+        let bounced = false;
         for (const peg of pegs) {
           const dx = x - peg.x;
           const dy = y - peg.y;
@@ -233,37 +207,86 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
             const dot = vx * nx + vy * ny;
             vx = (vx - 2 * dot * nx) * PEG_BOUNCE;
             vy = (vy - 2 * dot * ny) * PEG_BOUNCE;
-            // Ensure minimum downward velocity so the marble always progresses.
             if (vy < 0.5) vy = 0.5;
-            playSound("tick");
+            bounced = true;
           }
+        }
+
+        // Throttle tick sound to at most once per 80ms.
+        if (bounced && Date.now() - lastTickSound > 80) {
+          playSound("tick");
+          lastTickSound = Date.now();
         }
 
         if (y >= PEG_AREA_BOTTOM) {
           const slot = getSlotAtX(x);
+          landedSlotRef.current = slot;
           setLandedSlot(slot);
           setPhase("landed");
+          phaseRef.current = "landed";
+          marbleRef.current = null;
           playSound("drop");
-          return null;
+        } else {
+          marbleRef.current = { x, y, vx, vy };
         }
 
-        return { x, y, vx, vy };
-      });
+        // Safety timeout: force-land after 8 seconds.
+        if (Date.now() - dropStartRef.current > 8000) {
+          const slot = Math.floor(Math.random() * SLOT_COUNT);
+          landedSlotRef.current = slot;
+          setLandedSlot(slot);
+          setPhase("landed");
+          phaseRef.current = "landed";
+          marbleRef.current = null;
+          playSound("drop");
+        }
+      }
+
+      drawScene();
+      raf = requestAnimationFrame(tick);
     };
 
-    const interval = setInterval(step, 16);
-    return () => clearInterval(interval);
-  }, [marblePos, phase, SLOT_COUNT]);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [drawScene, pegs, SLOT_COUNT, slotWidth]);
 
-  // Redraw on every relevant state change.
+  // Phase transitions: memorize -> aiming -> dropping -> landed -> (user picks) -> result
   useEffect(() => {
-    drawScene();
-  }, [drawScene]);
+    playSound("reveal");
+    // memorize for 3s, then aim for 2s, then shoot.
+    const t1 = setTimeout(() => {
+      setPhase("aiming");
+      phaseRef.current = "aiming";
+      playSound("shuffle");
+    }, 3000);
+    const t2 = setTimeout(() => {
+      // Shoot the marble from the current cannon angle.
+      playSound("drop");
+      const angle = cannonAngleRef.current;
+      const startX = WIDTH / 2 + Math.sin(angle) * 30;
+      const startY = 50;
+      const speed = 3;
+      marbleRef.current = {
+        x: startX,
+        y: startY,
+        vx: Math.sin(angle) * speed,
+        vy: Math.cos(angle) * speed,
+      };
+      dropStartRef.current = Date.now();
+      setPhase("dropping");
+      phaseRef.current = "dropping";
+    }, 5000); // 3s memorize + 2s aiming
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [spec, WIDTH]);
 
   const handlePick = (option: string) => {
     if (disabled || phase !== "landed" || pickedOption !== null || landedSlot === null) return;
     setPickedOption(option);
     setPhase("result");
+    phaseRef.current = "result";
     const correctAnswer = spec.slotItems[landedSlot];
     const correct = option === correctAnswer;
     playSound(correct ? "correct" : "incorrect");
@@ -279,8 +302,9 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
           </div>
           <div className="text-sm text-muted-foreground">
             {phase === "memorize" && "Memorize the slots..."}
+            {phase === "aiming" && "The cannon is aiming..."}
             {phase === "dropping" && "Watch the marble drop..."}
-            {phase === "landed" && "The marble landed on a slot. Pick the matching aspect:"}
+            {phase === "landed" && "The marble landed! Pick the item in the highlighted slot:"}
             {phase === "result" && "Result shown"}
           </div>
         </div>
@@ -324,6 +348,7 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
 
         <div className="text-xs text-muted-foreground text-center">
           {phase === "memorize" && "Slots will hide when the marble drops."}
+          {phase === "aiming" && "The cannon rotates — the marble will follow its angle."}
         </div>
       </CardContent>
     </Card>

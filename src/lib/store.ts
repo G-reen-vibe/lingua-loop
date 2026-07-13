@@ -141,7 +141,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updatePreferences: (prefs) => {
-    const data = { ...get().data, preferences: { ...get().data.preferences, ...prefs } };
+    const current = get().data.preferences ?? { theme: "emerald" as ThemeName, soundEnabled: true };
+    const data = { ...get().data, preferences: { ...current, ...prefs } };
     persist(data);
     set({ data });
   },
@@ -204,7 +205,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ts: now,
         format,
         correct,
-        mode: oldSession ? (get().view as { mode: StudyMode }).mode : "daily",
+        mode: get().view.kind === "study" ? get().view.mode : "daily",
         wordIndex,
         lessonId,
       };
@@ -235,10 +236,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const served = oldSession.questionsServed + 1;
     const sessCorrect = oldSession.correct + (correct ? 1 : 0);
     const sessIncorrect = oldSession.incorrect + (correct ? 0 : 1);
-    const lives = oldSession.lives - (correct ? 0 : 1);
+    // Lives only matter for rush mode; clamp at 0 to avoid negative values.
+    const lives = oldSession.lives > 0 ? oldSession.lives - (correct ? 0 : 1) : 0;
     const recent = [...oldSession.recentFormats, format].slice(-8);
 
-    const mode = (get().view as { mode: StudyMode }).mode;
+    const mode: StudyMode = get().view.kind === "study" ? get().view.mode : "daily";
     const goal = sessionGoal(mode);
     const done =
       served >= goal ||

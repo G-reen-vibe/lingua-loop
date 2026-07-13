@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { BookOpen, Upload, Download, Plus, Clock, CheckCircle2, Layers, Palette, Volume2 } from "lucide-react";
 import { toast } from "sonner";
-import { playSound } from "@/lib/sounds";
+import { playSound, setSoundEnabled } from "@/lib/sounds";
 
 export function HomePage() {
   const data = useAppStore((s) => s.data);
@@ -310,6 +310,7 @@ export function HomePage() {
               <Switch
                 checked={preferences.soundEnabled}
                 onCheckedChange={(on) => {
+                  setSoundEnabled(on); // enable immediately so the confirmation plays
                   updatePreferences({ soundEnabled: on });
                   if (on) playSound("correct");
                 }}
