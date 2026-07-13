@@ -1,0 +1,825 @@
+     1→     1→import {
+     2→     2→  Word,
+     3→     3→  AspectKey,
+     4→     4→  FormatKind,
+     5→     5→  Lesson,
+     6→     6→  WordProgress,
+     7→     7→} from "./types";
+     8→     8→import {
+     9→     9→  getAspect,
+    10→    10→  cleanSynonym,
+    11→    11→  availableAspects,
+    12→    12→  wordForms,
+    13→    13→  shortAspects,
+    14→    14→} from "./mastery";
+    15→    15→
+    16→    16→// ===== RNG helpers =====
+    17→    17→
+    18→    18→// Seeded RNG for reproducibility (optional). Default Math.random.
+    19→    19→export function shuffle<T>(arr: T[], rng: () => number = Math.random): T[] {
+    20→    20→  const out = arr.slice();
+    21→    21→  for (let i = out.length - 1; i > 0; i--) {
+    22→    22→    const j = Math.floor(rng() * (i + 1));
+    23→    23→    [out[i], out[j]] = [out[j], out[i]];
+    24→    24→  }
+    25→    25→  return out;
+    26→    26→}
+    27→    27→
+    28→    28→export function sample<T>(arr: T[], n: number, rng: () => number = Math.random): T[] {
+    29→    29→  return shuffle(arr, rng).slice(0, n);
+    30→    30→}
+    31→    31→
+    32→    32→export function randomItem<T>(arr: T[], rng: () => number = Math.random): T {
+    33→    33→  return arr[Math.floor(rng() * arr.length)];
+    34→    34→}
+    35→    35→
+    36→    36→// ===== Generic aspect helpers =====
+    37→    37→
+    38→    38→// Pick a "prompt" aspect and a distinct "answer" aspect for a word.
+    39→    39→// Avoids returning the same aspect twice, and avoids empty aspects.
+    40→    40→export function pickTwoAspects(
+    41→    41→  word: Word,
+    42→    42→  opts: { excludeKeys?: AspectKey[]; rng?: () => number } = {}
+    43→    43→): { promptKey: AspectKey; promptValue: string; answerKey: AspectKey; answerValue: string } | null {
+    44→    44→  const rng = opts.rng ?? Math.random;
+    45→    45→  const exclude = opts.excludeKeys ?? [];
+    46→    46→  const aspects = availableAspects(word).filter((a) => !exclude.includes(a.key));
+    47→    47→  if (aspects.length < 2) return null;
+    48→    48→  const shuffled = shuffle(aspects, rng);
+    49→    49→  const prompt = shuffled[0];
+    50→    50→  const answer = shuffled[1];
+    51→    51→  return {
+    52→    52→    promptKey: prompt.key,
+    53→    53→    promptValue: prompt.value,
+    54→    54→    answerKey: answer.key,
+    55→    55→    answerValue: answer.value,
+    56→    56→  };
+    57→    57→}
+    58→    58→
+    59→    59→// Get a word form (word/alt) at random.
+    60→    60→export function pickWordForm(word: Word, rng: () => number = Math.random): string {
+    61→    61→  const forms = wordForms(word);
+    62→    62→  return forms[Math.floor(rng() * forms.length)];
+    63→    63→}
+    64→    64→
+    65→    65→// ===== Distractor generation =====
+    66→    66→// Generates distractor aspect values from OTHER words in the lesson,
+    67→    67→// ensuring they're distinct from the correct answer.
+    68→    68→
+    69→    69→export function generateDistractors(
+    70→    70→  lesson: Lesson,
+    71→    71→  correctValue: string,
+    72→    72→  count: number,
+    73→    73→  opts: { fromKey?: AspectKey; rng?: () => number } = {}
+    74→    74→): string[] {
+    75→    75→  const rng = opts.rng ?? Math.random;
+    76→    76→  const pool: string[] = [];
+    77→    77→  for (const w of lesson.words) {
+    78→    78→    if (opts.fromKey) {
+    79→    79→      let v = getAspect(w, opts.fromKey);
+    80→    80→      if (opts.fromKey === "synonym") v = cleanSynonym(v);
+    81→    81→      if (v && v.trim() && v !== correctValue) pool.push(v);
+    82→    82→    } else {
+    83→    83→      for (const a of availableAspects(w)) {
+    84→    84→        if (a.value !== correctValue && !LONG_ASPECT_KEYS_DUMMY.includes(a.key)) {
+    85→    85→          pool.push(a.value);
+    86→    86→        }
+    87→    87→      }
+    88→    88→    }
+    89→    89→  }
+    90→    90→  // Deduplicate
+    91→    91→  const unique = Array.from(new Set(pool));
+    92→    92→  return sample(unique, count, rng);
+    93→    93→}
+    94→    94→
+    95→    95→const LONG_ASPECT_KEYS_DUMMY: AspectKey[] = ["definition", "explanation"];
+    96→    96→
+    97→    97→// ===== Per-format question generation =====
+    98→    98→
+    99→    99→// Each "question spec" is a serializable description of what the UI should render.
+   100→   100→// The UI components consume these specs.
+   101→   101→
+   102→   102→export interface IntroductionSpec {
+   103→   103→  format: "introduction";
+   104→   104→  word: Word;
+   105→   105→}
+   106→   106→
+   107→   107→export interface PickAnswerSpec {
+   108→   108→  format: "pick-answer";
+   109→   109→  prompt: string; // the word or alt form shown
+   110→   110→  promptKey: AspectKey;
+   111→   111→  correctAnswer: string;
+   112→   112→  correctKey: AspectKey;
+   113→   113→  options: string[]; // includes correct answer, shuffled
+   114→   114→}
+   115→   115→
+   116→   116→export interface SpotLieSpec {
+   117→   117→  format: "spot-lie";
+   118→   118→  pairs: { left: string; right: string; correct: boolean }[];
+   119→   119→}
+   120→   120→
+   121→   121→export interface MatchPairsSpec {
+   122→   122→  format: "match-pairs";
+   123→   123→  leftItems: string[]; // word forms
+   124→   124→  rightItems: string[]; // aspects (shuffled, aligned with leftItems as correct)
+   125→   125→  correctPairs: { left: string; right: string }[];
+   126→   126→}
+   127→   127→
+   128→   128→export interface WordScrambleSpec {
+   129→   129→  format: "word-scramble";
+   130→   130→  prompt: string;
+   131→   131→  promptKey: AspectKey;
+   132→   132→  answer: string; // the target answer (may be multi-word)
+   133→   133→  pieces: string[]; // shuffled pieces (chars or words) + distractors
+   134→   134→  isCharMode: boolean; // true = char-level, false = word-level
+   135→   135→  preFilled: number[]; // indices into answer (chars or words) that are pre-filled
+   136→   136→  // For char mode, answer is split into chars; for word mode, split by spaces.
+   137→   137→}
+   138→   138→
+   139→   139→export interface FillGapSpec {
+   140→   140→  format: "fill-gap";
+   141→   141→  prompt: string;
+   142→   142→  promptKey: AspectKey;
+   143→   143→  answer: string; // what the user types (the blanked-out portion only)
+   144→   144→  fullAnswer: string; // the complete answer (for feedback display)
+   145→   145→  hint: string; // partial hint with underscores for missing chars
+   146→   146→  answerKey: AspectKey;
+   147→   147→}
+   148→   148→
+   149→   149→export interface SentenceComprehensionSpec {
+   150→   150→  format: "sentence-comprehension";
+   151→   151→  tokens: { text: string; translation?: string; blank: boolean; answer?: string }[];
+   152→   152→  options: string[]; // answer choices, including correct ones + distractors
+   153→   153→  translation: string;
+   154→   154→}
+   155→   155→
+   156→   156→export interface ShellGameSpec {
+   157→   157→  format: "shell-game";
+   158→   158→  shellItems: string[]; // what's hidden under each shell
+   159→   159→  shellKeys: AspectKey[]; // the key type of each shell item
+   160→   160→  prompt: string; // an aspect shown to the user
+   161→   161→  promptKey: AspectKey;
+   162→   162→  correctShell: number; // index of the shell containing the matching item
+   163→   163→  shuffleOrder: number[]; // final positions after shuffle
+   164→   164→}
+   165→   165→
+   166→   166→export interface MemoryGridSpec {
+   167→   167→  format: "memory-grid";
+   168→   168→  cardItems: string[]; // what's on each card
+   169→   169→  cardKeys: AspectKey[];
+   170→   170→  prompt: string;
+   171→   171→  promptKey: AspectKey;
+   172→   172→  correctCard: number;
+   173→   173→}
+   174→   174→
+   175→   175→export type QuestionSpec =
+   176→   176→  | IntroductionSpec
+   177→   177→  | PickAnswerSpec
+   178→   178→  | SpotLieSpec
+   179→   179→  | MatchPairsSpec
+   180→   180→  | WordScrambleSpec
+   181→   181→  | FillGapSpec
+   182→   182→  | SentenceComprehensionSpec
+   183→   183→  | ShellGameSpec
+   184→   184→  | MemoryGridSpec;
+   185→   185→
+   186→   186→// ===== Introduction =====
+   187→   187→
+   188→   188→export function genIntroduction(word: Word): IntroductionSpec {
+   189→   189→  return { format: "introduction", word };
+   190→   190→}
+   191→   191→
+   192→   192→// ===== Pick the Answer =====
+   193→   193→// Given a word (or alt), present N answer choices where each is a random aspect
+   194→   194→// of the word or another word. N starts at 2 and increases with mastery.
+   195→   195→
+   196→   196→export function genPickAnswer(
+   197→   197→  lesson: Lesson,
+   198→   198→  word: Word,
+   199→   199→  mastery: number,
+   200→   200→  rng: () => number = Math.random
+   201→   201→): PickAnswerSpec | null {
+   202→   202→  const promptForm = pickWordForm(word, rng);
+   203→   203→  // The correct answer is a random aspect of the word (not the word itself
+   204→   204→  // or another alt, since those would be ambiguous).
+   205→   205→  const possibleAnswerKeys: AspectKey[] = [
+   206→   206→    "definition",
+   207→   207→    "synonym",
+   208→   208→    "translation",
+   209→   209→    "explanation",
+   210→   210→  ];
+   211→   211→  const validKeys = possibleAnswerKeys.filter((k) => {
+   212→   212→    let v = getAspect(word, k);
+   213→   213→    if (k === "synonym") v = cleanSynonym(v);
+   214→   214→    return v && v.trim();
+   215→   215→  });
+   216→   216→  if (validKeys.length === 0) return null;
+   217→   217→
+   218→   218→  const answerKey = randomItem(validKeys, rng);
+   219→   219→  let answerValue = getAspect(word, answerKey)!;
+   220→   220→  if (answerKey === "synonym") answerValue = cleanSynonym(answerValue)!;
+   221→   221→
+   222→   222→  // N starts at 2 and increases with mastery (word mastery, not user mastery).
+   223→   223→  const N = Math.min(6, 2 + Math.floor(mastery / 2));
+   224→   224→
+   225→   225→  // Distractors: same aspect key from other words.
+   226→   226→  const distractors = generateDistractors(lesson, answerValue, N - 1, {
+   227→   227→    fromKey: answerKey,
+   228→   228→    rng,
+   229→   229→  });
+   230→   230→  // If not enough distractors of the same key, fall back to any aspect.
+   231→   231→  if (distractors.length < N - 1) {
+   232→   232→    const extra = generateDistractors(lesson, answerValue, N - 1 - distractors.length, { rng });
+   233→   233→    for (const d of extra) {
+   234→   234→      if (!distractors.includes(d) && d !== answerValue) distractors.push(d);
+   235→   235→    }
+   236→   236→  }
+   237→   237→
+   238→   238→  const options = shuffle([answerValue, ...distractors], rng);
+   239→   239→  return {
+   240→   240→    format: "pick-answer",
+   241→   241→    prompt: promptForm,
+   242→   242→    promptKey: "word",
+   243→   243→    correctAnswer: answerValue,
+   244→   244→    correctKey: answerKey,
+   245→   245→    options,
+   246→   246→  };
+   247→   247→}
+   248→   248→
+   249→   249→// ===== Spot the Lie =====
+   250→   250→// N pairs: one side is word/alt, other is a non-definition/explanation aspect.
+   251→   251→// One pair is incorrect.
+   252→   252→
+   253→   253→export function genSpotLie(
+   254→   254→  lesson: Lesson,
+   255→   255→  word: Word,
+   256→   256→  mastery: number,
+   257→   257→  rng: () => number = Math.random
+   258→   258→): SpotLieSpec | null {
+   259→   259→  const N = Math.min(5, 2 + Math.floor(mastery / 2));
+   260→   260→
+   261→   261→  // Build correct pairs from this word and other words.
+   262→   262→  // Each pair: left = word/alt form, right = a short aspect (not def/explanation).
+   263→   263→  const buildCorrectPair = (w: Word): { left: string; right: string } | null => {
+   264→   264→    const left = pickWordForm(w, rng);
+   265→   265→    const shorts = shortAspects(w).filter(
+   266→   266→      (a) => a.key !== "word" && a.value !== left
+   267→   267→    );
+   268→   268→    if (shorts.length === 0) return null;
+   269→   269→    const right = randomItem(shorts, rng).value;
+   270→   270→    return { left, right };
+   271→   271→  };
+   272→   272→
+   273→   273→  // We need N-1 correct pairs + 1 incorrect pair.
+   274→   274→  // Use the target word for one of them, and pull others from the lesson.
+   275→   275→  const otherWords = lesson.words.filter((w) => w.word !== word.word);
+   276→   276→  const shuffledOthers = shuffle(otherWords, rng);
+   277→   277→
+   278→   278→  const pairs: { left: string; right: string; correct: boolean }[] = [];
+   279→   279→  const usedLefts = new Set<string>();
+   280→   280→  const usedRights = new Set<string>();
+   281→   281→
+   282→   282→  // Add the target word's pair (correct) first.
+   283→   283→  const targetPair = buildCorrectPair(word);
+   284→   284→  if (targetPair) {
+   285→   285→    pairs.push({ ...targetPair, correct: true });
+   286→   286→    usedLefts.add(targetPair.left);
+   287→   287→    usedRights.add(targetPair.right);
+   288→   288→  }
+   289→   289→
+   290→   290→  // Add correct pairs from other words.
+   291→   291→  for (const w of shuffledOthers) {
+   292→   292→    if (pairs.length >= N - 1) break;
+   293→   293→    const p = buildCorrectPair(w);
+   294→   294→    if (!p) continue;
+   295→   295→    if (usedLefts.has(p.left) || usedRights.has(p.right)) continue;
+   296→   296→    pairs.push({ ...p, correct: true });
+   297→   297→    usedLefts.add(p.left);
+   298→   298→    usedRights.add(p.right);
+   299→   299→  }
+   300→   300→
+   301→   301→  if (pairs.length < N - 1) return null;
+   302→   302→
+   303→   303→  // Build the incorrect pair: take a word form from another word and pair it
+   304→   304→  // with a mismatched aspect.
+   305→   305→  const lieWordPool = shuffledOthers.filter((w) => !usedLefts.has(w.word));
+   306→   306→  let liePair: { left: string; right: string } | null = null;
+   307→   307→  for (const w of lieWordPool) {
+   308→   308→    const left = pickWordForm(w, rng);
+   309→   309→    if (usedLefts.has(left)) continue;
+   310→   310→    // Pick a right that does NOT belong to this word.
+   311→   311→    const otherRights: string[] = [];
+   312→   312→    for (const ow of lesson.words) {
+   313→   313→      if (ow.word === w.word) continue;
+   314→   314→      for (const a of shortAspects(ow)) {
+   315→   315→        if (!usedRights.has(a.value) && a.value !== left) otherRights.push(a.value);
+   316→   316→      }
+   317→   317→    }
+   318→   318→    if (otherRights.length === 0) continue;
+   319→   319→    const right = randomItem(otherRights, rng);
+   320→   320→    liePair = { left, right };
+   321→   321→    break;
+   322→   322→  }
+   323→   323→  if (!liePair) return null;
+   324→   324→
+   325→   325→  pairs.push({ ...liePair, correct: false });
+   326→   326→
+   327→   327→  return { format: "spot-lie", pairs: shuffle(pairs, rng) };
+   328→   328→}
+   329→   329→
+   330→   330→// ===== Match Pairs =====
+   331→   331→// Generic matching: left = word/alt, right = a single type of short aspect.
+   332→   332→// Served once, affects mastery for all pairs.
+   333→   333→
+   334→   334→export function genMatchPairs(
+   335→   335→  lesson: Lesson,
+   336→   336→  words: Word[],
+   337→   337→  mastery: number,
+   338→   338→  rng: () => number = Math.random
+   339→   339→): MatchPairsSpec | null {
+   340→   340→  // Number of pairs scales with mastery: 3 -> 4 -> 5 -> 6
+   341→   341→  const N = Math.min(6, 3 + Math.floor(mastery / 2));
+   342→   342→
+   343→   343→  // Pick N words that have at least one short aspect besides the word.
+   344→   344→  const eligible = words.filter((w) => {
+   345→   345→    const s = shortAspects(w).filter((a) => a.key !== "word");
+   346→   346→    return s.length > 0;
+   347→   347→  });
+   348→   348→  if (eligible.length < N) return null;
+   349→   349→
+   350→   350→  // Choose a single aspect type for the right column.
+   351→   351→  // Find a key that all N chosen words have.
+   352→   352→  const candidateKeys: AspectKey[] = ["translation", "synonym", "alt1", "alt2", "alt3"];
+   353→   353→  let chosenKey: AspectKey | null = null;
+   354→   354→  let chosenWords: Word[] = [];
+   355→   355→
+   356→   356→  for (const key of shuffle(candidateKeys, rng)) {
+   357→   357→    const withKey = eligible.filter((w) => {
+   358→   358→      let v = getAspect(w, key);
+   359→   359→      if (key === "synonym") v = cleanSynonym(v);
+   360→   360→      return v && v.trim();
+   361→   361→    });
+   362→   362→    if (withKey.length >= N) {
+   363→   363→      // Ensure left-side uniqueness: use the word itself as the left.
+   364→   364→      // Alts could collide, so use the word string.
+   365→   365→      const unique = Array.from(new Set(withKey.map((w) => w.word))).map((s) =>
+   366→   366→        withKey.find((w) => w.word === s)!
+   367→   367→      );
+   368→   368→      if (unique.length >= N) {
+   369→   369→        chosenKey = key;
+   370→   370→        chosenWords = sample(unique, N, rng);
+   371→   371→        break;
+   372→   372→      }
+   373→   373→    }
+   374→   374→  }
+   375→   375→  if (!chosenKey || chosenWords.length === 0) {
+   376→   376→    // Fallback: translation key.
+   377→   377→    const withTrans = eligible.filter((w) => w.translation && w.translation.trim());
+   378→   378→    if (withTrans.length >= N) {
+   379→   379→      chosenKey = "translation";
+   380→   380→      chosenWords = sample(withTrans, N, rng);
+   381→   381→    } else {
+   382→   382→      return null;
+   383→   383→    }
+   384→   384→  }
+   385→   385→
+   386→   386→  const leftItems = chosenWords.map((w) => w.word);
+   387→   387→  const rightValues = chosenWords.map((w) => {
+   388→   388→    let v = getAspect(w, chosenKey!)!;
+   389→   389→    if (chosenKey === "synonym") v = cleanSynonym(v)!;
+   390→   390→    return v;
+   391→   391→  });
+   392→   392→
+   393→   393→  // Ensure rights are unique.
+   394→   394→  if (new Set(rightValues).size !== rightValues.length) return null;
+   395→   395→
+   396→   396→  const correctPairs = leftItems.map((left, i) => ({ left, right: rightValues[i] }));
+   397→   397→  const shuffledRights = shuffle(rightValues, rng);
+   398→   398→
+   399→   399→  return {
+   400→   400→    format: "match-pairs",
+   401→   401→    leftItems,
+   402→   402→    rightItems: shuffledRights,
+   403→   403→    correctPairs,
+   404→   404→  };
+   405→   405→}
+   406→   406→
+   407→   407→// ===== Word Scramble =====
+   408→   408→// One aspect is presented, the other is to be filled.
+   409→   409→// If multi-word, each word is an element; if single word, each char is an element.
+   410→   410→// Some irrelevant pieces added; some hints prefilled for long answers.
+   411→   411→
+   412→   412→export function genWordScramble(
+   413→   413→  lesson: Lesson,
+   414→   414→  word: Word,
+   415→   415→  mastery: number,
+   416→   416→  rng: () => number = Math.random
+   417→   417→): WordScrambleSpec | null {
+   418→   418→  // Pick prompt & answer aspects. Answer must not be definition/explanation.
+   419→   419→  // Prompt can be any aspect (including def/explanation).
+   420→   420→  const pair = pickTwoAspects(word, {
+   421→   421→    excludeKeys: [],
+   422→   422→    rng,
+   423→   423→  });
+   424→   424→  if (!pair) return null;
+   425→   425→
+   426→   426→  // Decide which is prompt and which is answer.
+   427→   427→  // Answer cannot be def/explanation; also cannot be unicode (must be typable-ish, but
+   428→   428→  // scramble doesn't require typing so we allow any non-def/explanation).
+   429→   429→  let promptKey = pair.promptKey;
+   430→   430→  let promptValue = pair.promptValue;
+   431→   431→  let answerKey = pair.answerKey;
+   432→   432→  let answerValue = pair.answerValue;
+   433→   433→  if (answerKey === "definition" || answerKey === "explanation") {
+   434→   434→    // Swap
+   435→   435→    [promptKey, answerKey] = [answerKey, promptKey];
+   436→   436→    [promptValue, answerValue] = [answerValue, promptValue];
+   437→   437→  }
+   438→   438→  // If after swap the answer is still def/explanation (both were), bail.
+   439→   439→  if (answerKey === "definition" || answerKey === "explanation") return null;
+   440→   440→  // Ensure answer is at least 2 chars.
+   441→   441→  if (answerValue.trim().length < 2) return null;
+   442→   442→
+   443→   443→  const isMultiWord = answerValue.includes(" ");
+   444→   444→  const isCharMode = !isMultiWord;
+   445→   445→  const elements = isCharMode
+   446→   446→    ? answerValue.split("")
+   447→   447→    : answerValue.split(" ").filter((w) => w.length > 0);
+   448→   448→
+   449→   449→  if (elements.length < 2) return null;
+   450→   450→
+   451→   451→  // Number of distractors scales with mastery.
+   452→   452→  const distractorCount = Math.min(6, 1 + Math.floor(mastery / 2));
+   453→   453→  // Generate distractor elements.
+   454→   454→  const distractors: string[] = [];
+   455→   455→  if (isCharMode) {
+   456→   456→    // Char distractors from other words' chars.
+   457→   457→    const charPool = new Set<string>();
+   458→   458→    for (const w of lesson.words) {
+   459→   459→      if (w.word === word.word) continue;
+   460→   460→      for (const c of w.word) charPool.add(c);
+   461→   461→    }
+   462→   462→    const poolArr = Array.from(charPool).filter((c) => !elements.includes(c));
+   463→   463→    for (const d of sample(poolArr, distractorCount, rng)) distractors.push(d);
+   464→   464→  } else {
+   465→   465→    // Word distractors from other words' translations/synonyms split by space.
+   466→   466→    const wordPool = new Set<string>();
+   467→   467→    for (const w of lesson.words) {
+   468→   468→      if (w.word === word.word) continue;
+   469→   469→      for (const a of shortAspects(w)) {
+   470→   470→        if (a.value.includes(" ")) {
+   471→   471→          for (const part of a.value.split(" ")) {
+   472→   472→            if (part && !elements.includes(part)) wordPool.add(part);
+   473→   473→          }
+   474→   474→        }
+   475→   475→      }
+   476→   476→    }
+   477→   477→    const poolArr = Array.from(wordPool);
+   478→   478→    for (const d of sample(poolArr, distractorCount, rng)) distractors.push(d);
+   479→   479→  }
+   480→   480→
+   481→   481→  // Hints: prefill some elements if the answer is long.
+   482→   482→  // Number of hints decreases with mastery. For short answers (<=4 elements), no hints.
+   483→   483→  const totalLen = elements.length;
+   484→   484→  let preFilledCount = 0;
+   485→   485→  if (totalLen > 4) {
+   486→   486→    const maxHints = Math.floor(totalLen / 2);
+   487→   487→    preFilledCount = Math.max(0, maxHints - mastery);
+   488→   488→  }
+   489→   489→  // Choose which indices to prefill (not the last one, to leave something to solve).
+   490→   490→  const indices = elements.map((_, i) => i).filter((i) => i < elements.length - 1);
+   491→   491→  const preFilled = sample(indices, preFilledCount, rng);
+   492→   492→
+   493→   493→  const allPieces = [...elements, ...distractors];
+   494→   494→  const pieces = shuffle(allPieces, rng);
+   495→   495→
+   496→   496→  return {
+   497→   497→    format: "word-scramble",
+   498→   498→    prompt: promptValue,
+   499→   499→    promptKey,
+   500→   500→    answer: answerValue,
+   501→   501→    pieces,
+   502→   502→    isCharMode,
+   503→   503→    preFilled,
+   504→   504→  };
+   505→   505→}
+   506→   506→
+   507→   507→// ===== Fill the Gap =====
+   508→   508→// Like word scramble but typed. Answer must be typeable (no unicode/def/explanation).
+   509→   509→// Most of the answer is given as hints.
+   510→   510→
+   511→   511→export function genFillGap(
+   512→   512→  lesson: Lesson,
+   513→   513→  word: Word,
+   514→   514→  mastery: number,
+   515→   515→  rng: () => number = Math.random
+   516→   516→): FillGapSpec | null {
+   517→   517→  // Pick two aspects; answer must be a typeable short aspect.
+   518→   518→  const pair = pickTwoAspects(word, { rng });
+   519→   519→  if (!pair) return null;
+   520→   520→  let promptKey = pair.promptKey;
+   521→   521→  let promptValue = pair.promptValue;
+   522→   522→  let answerKey = pair.answerKey;
+   523→   523→  let answerValue = pair.answerValue;
+   524→   524→  // Answer cannot be def/explanation.
+   525→   525→  if (answerKey === "definition" || answerKey === "explanation") {
+   526→   526→    [promptKey, answerKey] = [answerKey, promptKey];
+   527→   527→    [promptValue, answerValue] = [answerValue, promptValue];
+   528→   528→  }
+   529→   529→  if (answerKey === "definition" || answerKey === "explanation") return null;
+   530→   530→  // Answer must be typeable: only ASCII (standard qwerty).
+   531→   531→  if (!/^[\x20-\x7E]+$/.test(answerValue)) return null;
+   532→   532→  if (answerValue.trim().length < 2) return null;
+   533→   533→
+   534→   534→  // Build hint: show most of the answer, leave a small gap.
+   535→   535→  // "should not be expected to type anything longer than maybe 1 word"
+   536→   536→  // So if multi-word, only keep one word as the gap, show the rest.
+   537→   537→  let answerToType = answerValue;
+   538→   538→  let shownPrefix = "";
+   539→   539→  let shownSuffix = "";
+   540→   540→
+   541→   541→  if (answerValue.includes(" ")) {
+   542→   542→    const parts = answerValue.split(" ").filter((p) => p.length > 0);
+   543→   543→    if (parts.length >= 2) {
+   544→   544→      // Pick one part to be the gap (prefer a non-first part).
+   545→   545→      const gapIdx = Math.min(parts.length - 1, 1 + Math.floor(rng() * (parts.length - 1)));
+   546→   546→      answerToType = parts[gapIdx];
+   547→   547→      shownPrefix = parts.slice(0, gapIdx).join(" ") + (gapIdx > 0 ? " " : "");
+   548→   548→      shownSuffix = gapIdx < parts.length - 1 ? " " + parts.slice(gapIdx + 1).join(" ") : "";
+   549→   549→    }
+   550→   550→  }
+   551→   551→
+   552→   552→  // Within answerToType, show most chars as hints, leave 2-4 chars to fill.
+   553→   553→  const chars = answerToType.split("");
+   554→   554→  if (chars.length < 2) return null;
+   555→   555→  const gapCount = Math.max(2, Math.min(4, Math.floor(chars.length / 2)));
+   556→   556→  // Choose gap positions.
+   557→   557→  const positions = chars.map((_, i) => i);
+   558→   558→  const gapPositions = new Set(sample(positions, gapCount, rng));
+   559→   559→  const hintChars = chars.map((c, i) => (gapPositions.has(i) ? "_" : c));
+   560→   560→  const hint = shownPrefix + hintChars.join("") + shownSuffix;
+   561→   561→
+   562→   562→  // The user only types the blanked-out chars, in order.
+   563→   563→  const typedAnswer = chars
+   564→   564→    .filter((_, i) => gapPositions.has(i))
+   565→   565→    .join("");
+   566→   566→
+   567→   567→  return {
+   568→   568→    format: "fill-gap",
+   569→   569→    prompt: promptValue,
+   570→   570→    promptKey,
+   571→   571→    answer: typedAnswer,
+   572→   572→    fullAnswer: answerValue,
+   573→   573→    hint,
+   574→   574→    answerKey,
+   575→   575→  };
+   576→   576→}
+   577→   577→
+   578→   578→// ===== Sentence Comprehension =====
+   579→   579→// Choose a sentence, blank out N words. Words with mastery >= 3 have bracket
+   580→   580→// translations removed; below that, kept.
+   581→   581→
+   582→   582→export function parseSentence(exert: string): { text: string; translation?: string }[] {
+   583→   583→  // exert format: "El [the] gato [cat] duerme [sleeps]"
+   584→   584→  // Tokens separated by spaces. Each token is either a word or "[translation]".
+   585→   585→  // The bracket immediately follows the word it translates.
+   586→   586→  const rawTokens = exert.split(/\s+/).filter((t) => t.length > 0);
+   587→   587→  const tokens: { text: string; translation?: string }[] = [];
+   588→   588→  for (const t of rawTokens) {
+   589→   589→    if (t.startsWith("[") && t.endsWith("]")) {
+   590→   590→      // translation for the previous token
+   591→   591→      if (tokens.length > 0) {
+   592→   592→        tokens[tokens.length - 1].translation = t.slice(1, -1);
+   593→   593→      }
+   594→   594→    } else {
+   595→   595→      // Strip punctuation for matching but keep original for display.
+   596→   596→      tokens.push({ text: t });
+   597→   597→    }
+   598→   598→  }
+   599→   599→  return tokens;
+   600→   600→}
+   601→   601→
+   602→   602→export function genSentenceComprehension(
+   603→   603→  lesson: Lesson,
+   604→   604→  word: Word,
+   605→   605→  mastery: number,
+   606→   606→  rng: () => number = Math.random
+   607→   607→): SentenceComprehensionSpec | null {
+   608→   608→  if (!word.sentences || word.sentences.length === 0) return null;
+   609→   609→  const sentence = randomItem(word.sentences, rng);
+   610→   610→  const parsed = parseSentence(sentence.exert);
+   611→   611→  if (parsed.length < 3) return null;
+   612→   612→
+   613→   613→  // Number of blanks: 1 + floor(mastery / 3), capped.
+   614→   614→  const blankCount = Math.min(3, 1 + Math.floor(mastery / 3));
+   615→   615→  // Number of distractors: 1 + floor(mastery / 2).
+   616→   616→  const distractorCount = Math.min(4, 1 + Math.floor(mastery / 2));
+   617→   617→
+   618→   618→  // Eligible to blank: tokens that have a translation bracket (so we know the answer).
+   619→   619→  const blankableIndices = parsed
+   620→   620→    .map((t, i) => (t.translation ? i : -1))
+   621→   621→    .filter((i) => i >= 0);
+   622→   622→  if (blankableIndices.length < blankCount) return null;
+   623→   623→
+   624→   624→  const blankIndices = new Set(sample(blankableIndices, blankCount, rng));
+   625→   625→  const answers = Array.from(blankIndices).map((i) => parsed[i].text);
+   626→   626→
+   627→   627→  // Distractors: other word forms from the lesson.
+   628→   628→  const distractorPool = new Set<string>();
+   629→   629→  for (const w of lesson.words) {
+   630→   630→    for (const f of wordForms(w)) {
+   631→   631→      if (!answers.includes(f)) distractorPool.add(f);
+   632→   632→    }
+   633→   633→  }
+   634→   634→  const distractors = sample(Array.from(distractorPool), distractorCount, rng);
+   635→   635→
+   636→   636→  // Build tokens, removing bracket translations for words with mastery >= 3.
+   637→   637→  // We need to look up the mastery of each token's word in the lesson.
+   638→   638→  const wordMastery = new Map<string, number>();
+   639→   639→  for (let i = 0; i < lesson.words.length; i++) {
+   640→   640→    const w = lesson.words[i];
+   641→   641→    const p = lesson.progress[i];
+   642→   642→    const forms = wordForms(w);
+   643→   643→    for (const f of forms) wordMastery.set(f, p?.mastery ?? 0);
+   644→   644→  }
+   645→   645→
+   646→   646→  const tokens = parsed.map((t, i) => {
+   647→   647→    const isBlank = blankIndices.has(i);
+   648→   648→    if (isBlank) {
+   649→   649→      return { text: "___", blank: true, answer: t.text };
+   650→   650→    }
+   651→   651→    // Decide whether to show the bracket translation.
+   652→   652→    const m = wordMastery.get(t.text) ?? -1;
+   653→   653→    const showTranslation = m >= 0 && m < 3;
+   654→   654→    return {
+   655→   655→      text: t.text,
+   656→   656→      translation: showTranslation ? t.translation : undefined,
+   657→   657→      blank: false,
+   658→   658→    };
+   659→   659→  });
+   660→   660→
+   661→   661→  const options = shuffle([...answers, ...distractors], rng);
+   662→   662→
+   663→   663→  return {
+   664→   664→    format: "sentence-comprehension",
+   665→   665→    tokens,
+   666→   666→    options,
+   667→   667→    translation: sentence.translation,
+   668→   668→  };
+   669→   669→}
+   670→   670→
+   671→   671→// ===== Shell Game =====
+   672→   672→// N items (word/alt/synonym/translation) are hidden under shells.
+   673→   673→// User is shown an aspect and must pick the right shell.
+   674→   674→// {4, 5, 6} shells based on mastery.
+   675→   675→
+   676→   676→export function genShellGame(
+   677→   677→  lesson: Lesson,
+   678→   678→  word: Word,
+   679→   679→  mastery: number,
+   680→   680→  rng: () => number = Math.random
+   681→   681→): ShellGameSpec | null {
+   682→   682→  const shellCounts = [4, 5, 6];
+   683→   683→  const idx = Math.min(shellCounts.length - 1, Math.floor(mastery / 2));
+   684→   684→  const N = shellCounts[idx];
+   685→   685→
+   686→   686→  // Gather shell item candidates from THIS word only (the spec says
+   687→   687→  // "N of the word, any of its alt forms, its synonym, or direct translation are chosen").
+   688→   688→  const candidates: { value: string; key: AspectKey }[] = [];
+   689→   689→  for (const f of wordForms(word)) candidates.push({ value: f, key: "word" });
+   690→   690→  if (word.synonym) {
+   691→   691→    const s = cleanSynonym(word.synonym);
+   692→   692→    if (s) candidates.push({ value: s, key: "synonym" });
+   693→   693→  }
+   694→   694→  if (word.translation)
+   695→   695→    candidates.push({ value: word.translation, key: "translation" });
+   696→   696→
+   697→   697→  if (candidates.length < 2) return null;
+   698→   698→
+   699→   699→  // If we don't have N unique candidates, we can reuse some — but better to
+   700→   700→  // just use what we have (min 2). Actually the spec says N shells, so we need N items.
+   701→   701→  // If we have fewer than N unique candidates, pad with duplicates? No — that breaks
+   702→   702→  // "no two answer choices the same". Instead, fall back to using aspects from the
+   703→   703→  // word (definition, explanation) as additional shell items.
+   704→   704→  if (candidates.length < N) {
+   705→   705→    if (word.definition) candidates.push({ value: word.definition, key: "definition" });
+   706→   706→    if (word.explanation) candidates.push({ value: word.explanation, key: "explanation" });
+   707→   707→    if (word.alt1) candidates.push({ value: word.alt1, key: "alt1" });
+   708→   708→    if (word.alt2) candidates.push({ value: word.alt2, key: "alt2" });
+   709→   709→    if (word.alt3) candidates.push({ value: word.alt3, key: "alt3" });
+   710→   710→  }
+   711→   711→
+   712→   712→  // Deduplicate by value.
+   713→   713→  const unique = new Map<string, { value: string; key: AspectKey }>();
+   714→   714→  for (const c of candidates) {
+   715→   715→    if (!unique.has(c.value)) unique.set(c.value, c);
+   716→   716→  }
+   717→   717→  const uniqueArr = Array.from(unique.values());
+   718→   718→  if (uniqueArr.length < 2) return null;
+   719→   719→
+   720→   720→  const shellCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
+   721→   721→  const actualN = shellCandidates.length;
+   722→   722→
+   723→   723→  // The prompt is an aspect that corresponds to ONE of the shell items.
+   724→   724→  // Pick one shell item as the "target", then find an aspect of the same word
+   725→   725→  // that matches it but is shown as the prompt.
+   726→   726→  // Actually: "the user is then randomly shown an aspect corresponding to a shell item,
+   727→   727→  // this can be any aspect including the same one in the shell".
+   728→   728→  // So the prompt is just any aspect of the target word that "corresponds to" a shell item.
+   729→   729→  // For simplicity: the prompt is the translation or definition of the word whose
+   730→   730→  // form is under the target shell. But all shells are from the same word here.
+   731→   731→  // So the prompt is a DIFFERENT aspect of the same word that maps to the target shell.
+   732→   732→
+   733→   733→  // Pick a target shell.
+   734→   734→  const targetIdx = Math.floor(rng() * actualN);
+   735→   735→  const targetShell = shellCandidates[targetIdx];
+   736→   736→
+   737→   737→  // Pick a prompt aspect: any aspect of `word` that is unique enough to identify
+   738→   738→  // the target shell. Since all shells are aspects of the same word, the prompt
+   739→   739→  // must EQUAL one of the shell item values to be unambiguous... but then the answer
+   740→   740→  // is just "find the shell with this value". That's fine — the challenge is
+   741→   741→  // remembering positions after shuffling.
+   742→   742→  // The spec says "any aspect including the same one in the shell" — so yes,
+   743→   743→  // the prompt can just be the value of the target shell item.
+   744→   744→  // To make it slightly harder, pick a DIFFERENT aspect that still maps to the same shell.
+   745→   745→  // But since shells are aspect values, and the prompt is an aspect value, the only
+   746→   746→  // way to "correspond" is to be the same value OR a value that uniquely identifies
+   747→   747→  // the word (and thus the shell). Since all shells are from the same word, ANY aspect
+   748→   748→  // value would be ambiguous. So the prompt MUST be the shell item's own value.
+   749→   749→  // Conclusion: prompt = target shell item's value. This is a memory/attention game.
+   750→   750→
+   751→   751→  const prompt = targetShell.value;
+   752→   752→  const promptKey = targetShell.key;
+   753→   753→  const correctShell = targetIdx;
+   754→   754→
+   755→   755→  // Shuffle order: identity for now; the UI will animate the shuffle.
+   756→   756→  // We provide the initial order (0..N-1) and the final shuffled order.
+   757→   757→  const initial = shellCandidates.map((_, i) => i);
+   758→   758→  const shuffleOrder = shuffle(initial, rng);
+   759→   759→
+   760→   760→  return {
+   761→   761→    format: "shell-game",
+   762→   762→    shellItems: shellCandidates.map((s) => s.value),
+   763→   763→    shellKeys: shellCandidates.map((s) => s.key),
+   764→   764→    prompt,
+   765→   765→    promptKey,
+   766→   766→    correctShell,
+   767→   767→    shuffleOrder,
+   768→   768→  };
+   769→   769→}
+   770→   770→
+   771→   771→// ===== Memory Grid =====
+   772→   772→// Like shell game but with cards the user can rearrange.
+   773→   773→// {4, 6, 9} cards based on mastery.
+   774→   774→
+   775→   775→export function genMemoryGrid(
+   776→   776→  lesson: Lesson,
+   777→   777→  word: Word,
+   778→   778→  mastery: number,
+   779→   779→  rng: () => number = Math.random
+   780→   780→): MemoryGridSpec | null {
+   781→   781→  const cardCounts = [4, 6, 9];
+   782→   782→  const idx = Math.min(cardCounts.length - 1, Math.floor(mastery / 2));
+   783→   783→  const N = cardCounts[idx];
+   784→   784→
+   785→   785→  // Same as shell game: gather candidates from the word.
+   786→   786→  const candidates: { value: string; key: AspectKey }[] = [];
+   787→   787→  for (const f of wordForms(word)) candidates.push({ value: f, key: "word" });
+   788→   788→  if (word.synonym) {
+   789→   789→    const s = cleanSynonym(word.synonym);
+   790→   790→    if (s) candidates.push({ value: s, key: "synonym" });
+   791→   791→  }
+   792→   792→  if (word.translation)
+   793→   793→    candidates.push({ value: word.translation, key: "translation" });
+   794→   794→  if (word.definition)
+   795→   795→    candidates.push({ value: word.definition, key: "definition" });
+   796→   796→  if (word.explanation)
+   797→   797→    candidates.push({ value: word.explanation, key: "explanation" });
+   798→   798→  if (word.alt1) candidates.push({ value: word.alt1, key: "alt1" });
+   799→   799→  if (word.alt2) candidates.push({ value: word.alt2, key: "alt2" });
+   800→   800→  if (word.alt3) candidates.push({ value: word.alt3, key: "alt3" });
+   801→   801→
+   802→   802→  // Deduplicate by value.
+   803→   803→  const unique = new Map<string, { value: string; key: AspectKey }>();
+   804→   804→  for (const c of candidates) {
+   805→   805→    if (!unique.has(c.value)) unique.set(c.value, c);
+   806→   806→  }
+   807→   807→  const uniqueArr = Array.from(unique.values());
+   808→   808→  if (uniqueArr.length < 2) return null;
+   809→   809→
+   810→   810→  const cardCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
+   811→   811→  const actualN = cardCandidates.length;
+   812→   812→
+   813→   813→  const targetIdx = Math.floor(rng() * actualN);
+   814→   814→  const targetCard = cardCandidates[targetIdx];
+   815→   815→
+   816→   816→  return {
+   817→   817→    format: "memory-grid",
+   818→   818→    cardItems: cardCandidates.map((c) => c.value),
+   819→   819→    cardKeys: cardCandidates.map((c) => c.key),
+   820→   820→    prompt: targetCard.value,
+   821→   821→    promptKey: targetCard.key,
+   822→   822→    correctCard: targetIdx,
+   823→   823→  };
+   824→   824→}
+   825→   825→

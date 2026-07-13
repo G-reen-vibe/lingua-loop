@@ -24,12 +24,13 @@ export function ShellGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
 
   // Phase 1: reveal items for 2.5s, then shuffle, then allow picking.
   useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
     const t1 = setTimeout(() => {
       setPhase("shuffle");
       // Animate shuffle: multiple position swaps over ~1s
       let swaps = 0;
       const maxSwaps = 8;
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         setShuffledOrder((prev) => {
           const next = [...prev];
           const a = Math.floor(Math.random() * next.length);
@@ -40,13 +41,14 @@ export function ShellGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
         });
         swaps++;
         if (swaps >= maxSwaps) {
-          clearInterval(interval);
+          if (interval) clearInterval(interval);
           setPhase("pick");
         }
       }, 120);
     }, 2500);
     return () => {
       clearTimeout(t1);
+      if (interval) clearInterval(interval);
     };
   }, [spec]);
 

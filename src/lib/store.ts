@@ -54,7 +54,8 @@ interface AppState {
     lessonId: string,
     wordIndex: number,
     format: FormatKind,
-    correct: boolean
+    correct: boolean,
+    allWordIndices?: number[]
   ) => { done: boolean; goal: number; served: number };
   pickSessionFormat: (lessonId: string) => FormatKind | null;
 }
@@ -170,50 +171,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     return pickNextFormat(lesson, get().sessionRecentFormats);
   },
 
-  recordAnswer: (lessonId, wordIndex, format, correct) => {
-    const data = { ...get().data };
-    const lesson = data.lessons.find((l) => l.id === lessonId);
-    if (!lesson) return { done: true, goal: 0, served: 0 };
+  recordAnswer: (lessonId, wordIndex, format, correct, allWordIndices) => {
+    const oldData = get().data;
+    const lessonIdx = oldData.lessons.findIndex((l) => l.id === lessonId);
+    if (lessonIdx === -1) return { done: true, goal: 0, served: 0 };
+    const lesson = oldData.lessons[lessonIdx];
 
-    const oldProgress = lesson.progress[wordIndex];
-    if (!oldProgress) return { done: true, goal: 0, served: 0 };
+    // Determine which word indices to update. For match-pairs, update ALL pairs.
+    const indicesToUpdate = allWordIndices && allWordIndices.length > 0
+      ? allWordIndices
+      : [wordIndex];
 
-    // Update mastery/streak.
-    const newProgress = recordReview(oldProgress, correct, format);
+    // Deep-clone the lesson to avoid mutating shared references.
+    const newLesson: Lesson = JSON.parse(JSON.stringify(lesson));
+    const now = Date.now();
 
-    // Update algorithm state.
-    if (correct) {
-      newProgress.sm2 = sm2Update(oldProgress.sm2, correctToSm2Quality(true));
-      newProgress.fsrs = fsrsUpdate(oldProgress.fsrs, correctToFsrsRating(true));
-    } else {
-      newProgress.sm2 = sm2Update(oldProgress.sm2, correctToSm2Quality(false));
-      newProgress.fsrs = fsrsUpdate(oldProgress.fsrs, correctToFsrsRating(false));
-    }
-
-    // Track new-word introduction count.
-    if (format === "introduction" && !oldProgress.seen) {
-      if (lesson.newWordsDate !== todayStr()) {
-        lesson.newWordsSeenToday = 0;
-        lesson.newWordsDate = todayStr();
+    // Update each word's progress.
+    for (const idx of indicesToUpdate) {
+      const oldProgress = newLesson.progress[idx];
+      if (!oldProgress) continue;
+      const newProgress = recordReview(oldProgress, correct, format);
+      if (correct) {
+        newProgress.sm2 = sm2Update(oldProgress.sm2, correctToSm2Quality(true));
+        newProgress.fsrs = fsrsUpdate(oldProgress.fsrs, correctToFsrsRating(true));
+      } else {
+        newProgress.sm2 = sm2Update(oldProgress.sm2, correctToSm2Quality(false));
+        newProgress.fsrs = fsrsUpdate(oldProgress.fsrs, correctToFsrsRating(false));
       }
-      lesson.newWordsSeenToday += 1;
+      if (format === "introduction" && !oldProgress.seen) {
+        if (newLesson.newWordsDate !== todayStr()) {
+          newLesson.newWordsSeenToday = 0;
+          newLesson.newWordsDate = todayStr();
+        }
+        newLesson.newWordsSeenToday += 1;
+      }
+      newLesson.progress[idx] = newProgress;
     }
 
-    lesson.progress[wordIndex] = newProgress;
-
-    // Record history.
+    // Record history (one record for the primary word).
+    const mode = get().view.kind === "study" ? (get().view as { mode: StudyMode }).mode : "daily";
     const record: ReviewRecord = {
-      ts: Date.now(),
+      ts: now,
       format,
       correct,
-      mode: get().view.kind === "study" ? (get().view as { mode: StudyMode }).mode : "daily",
+      mode,
       wordIndex,
       lessonId,
     };
-    lesson.history.push(record);
-    newProgress.history.push(record);
+    newLesson.history.push(record);
 
-    persist(data);
+    // Build new data immutably.
+    const newLessons = [...oldData.lessons];
+    newLessons[lessonIdx] = newLesson;
+    const newData = { ...oldData, lessons: newLessons };
+    persist(newData);
 
     // Update session state.
     const served = get().sessionQuestionsServed + 1;
@@ -223,7 +234,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const recent = [...get().sessionRecentFormats, format].slice(-8);
     const records = [...get().sessionRecords, record];
 
-    const mode = (get().view as { mode: StudyMode }).mode;
     const goal = sessionGoal(mode);
     const done =
       served >= goal ||
@@ -231,7 +241,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       (mode === "rush" && Date.now() >= get().sessionEndAt);
 
     set({
-      data,
+      data: newData,
       sessionQuestionsServed: served,
       sessionCorrect: sessCorrect,
       sessionIncorrect: sessIncorrect,

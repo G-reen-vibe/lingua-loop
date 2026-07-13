@@ -171,7 +171,7 @@ export function LessonDetail({ lessonId }: { lessonId: string }) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="sm2">SM-2 (classic)</SelectItem>
-                    <SelectItem value="fsrs">FSRS-5 (modern)</SelectItem>
+                    <SelectItem value="fsrs">FSRS (modern)</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">

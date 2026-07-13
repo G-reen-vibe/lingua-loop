@@ -247,7 +247,13 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
     (correct: boolean, message?: string) => {
       if (!active || feedback) return;
 
-      const result = recordAnswer(lessonId, active.wordIndex, active.kind, correct);
+      // For match-pairs, pass all word indices so mastery is updated for all pairs.
+      const allIndices =
+        active.kind === "match-pairs" && active.spec.format === "match-pairs"
+          ? (active.spec as Extract<QuestionSpec, { format: "match-pairs" }>).wordIndices
+          : undefined;
+
+      const result = recordAnswer(lessonId, active.wordIndex, active.kind, correct, allIndices);
       const currentActive = active;
 
       setFeedback({ correct, message });
@@ -423,9 +429,15 @@ function FormatRenderer({
 }
 
 // Regenerate the prompt for a shell game sub-question (same shells, new prompt).
+// Avoids repeating the same target as the previous sub-question.
 function regenerateShellPrompt(spec: Extract<QuestionSpec, { format: "shell-game" }>): typeof spec {
-  // Pick a new random shell as the target.
-  const newTarget = Math.floor(Math.random() * spec.shellItems.length);
+  // Pick a new random shell, different from the current target.
+  let newTarget = Math.floor(Math.random() * spec.shellItems.length);
+  if (spec.shellItems.length > 1) {
+    while (newTarget === spec.correctShell) {
+      newTarget = Math.floor(Math.random() * spec.shellItems.length);
+    }
+  }
   return {
     ...spec,
     prompt: spec.shellItems[newTarget],

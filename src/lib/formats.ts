@@ -123,6 +123,7 @@ export interface MatchPairsSpec {
   leftItems: string[]; // word forms
   rightItems: string[]; // aspects (shuffled, aligned with leftItems as correct)
   correctPairs: { left: string; right: string }[];
+  wordIndices: number[]; // indices of the words used (for mastery updates)
 }
 
 export interface WordScrambleSpec {
@@ -148,7 +149,7 @@ export interface FillGapSpec {
 
 export interface SentenceComprehensionSpec {
   format: "sentence-comprehension";
-  tokens: { text: string; translation?: string; blank: boolean; answer?: string }[];
+  tokens: { text: string; clean: string; translation?: string; blank: boolean; answer?: string }[];
   options: string[]; // answer choices, including correct ones + distractors
   translation: string;
 }
@@ -199,7 +200,17 @@ export function genPickAnswer(
   mastery: number,
   rng: () => number = Math.random
 ): PickAnswerSpec | null {
-  const promptForm = pickWordForm(word, rng);
+  // Pick a word form (word or alt) as the prompt. Track which alt key it came from.
+  const forms = wordForms(word);
+  const promptForm = forms[Math.floor(rng() * forms.length)];
+  // Determine the promptKey: "word" if it's the main word, otherwise alt1/alt2/alt3.
+  let promptKey: AspectKey = "word";
+  if (promptForm !== word.word) {
+    if (word.alt1 && promptForm === word.alt1) promptKey = "alt1";
+    else if (word.alt2 && promptForm === word.alt2) promptKey = "alt2";
+    else if (word.alt3 && promptForm === word.alt3) promptKey = "alt3";
+  }
+
   // The correct answer is a random aspect of the word (not the word itself
   // or another alt, since those would be ambiguous).
   const possibleAnswerKeys: AspectKey[] = [
@@ -219,27 +230,26 @@ export function genPickAnswer(
   let answerValue = getAspect(word, answerKey)!;
   if (answerKey === "synonym") answerValue = cleanSynonym(answerValue)!;
 
-  // N starts at 2 and increases with mastery (word mastery, not user mastery).
+  // N starts at 2 and increases with mastery.
   const N = Math.min(6, 2 + Math.floor(mastery / 2));
 
-  // Distractors: same aspect key from other words.
+  // Distractors: same aspect key from other words. Spec requires same-type options.
   const distractors = generateDistractors(lesson, answerValue, N - 1, {
     fromKey: answerKey,
     rng,
   });
-  // If not enough distractors of the same key, fall back to any aspect.
-  if (distractors.length < N - 1) {
-    const extra = generateDistractors(lesson, answerValue, N - 1 - distractors.length, { rng });
-    for (const d of extra) {
-      if (!distractors.includes(d) && d !== answerValue) distractors.push(d);
-    }
-  }
+
+  // If not enough same-key distractors, reduce N to available options.
+  // We do NOT mix aspect types (spec: each choice is a random aspect, but
+  // mixing types makes the correct answer obvious).
+  const availableOptions = 1 + distractors.length;
+  if (availableOptions < 2) return null; // need at least 2 options
 
   const options = shuffle([answerValue, ...distractors], rng);
   return {
     format: "pick-answer",
     prompt: promptForm,
-    promptKey: "word",
+    promptKey,
     correctAnswer: answerValue,
     correctKey: answerKey,
     options,
@@ -335,7 +345,8 @@ export function genMatchPairs(
   lesson: Lesson,
   words: Word[],
   mastery: number,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  wordIndices?: number[]
 ): MatchPairsSpec | null {
   // Number of pairs scales with mastery: 3 -> 4 -> 5 -> 6
   const N = Math.min(6, 3 + Math.floor(mastery / 2));
@@ -347,45 +358,49 @@ export function genMatchPairs(
   });
   if (eligible.length < N) return null;
 
+  // Map eligible words to their indices in the lesson.
+  const eligibleWithIdx = eligible.map((w) => {
+    const idx = wordIndices
+      ? wordIndices[words.indexOf(w)]
+      : lesson.words.indexOf(w);
+    return { word: w, idx };
+  });
+
   // Choose a single aspect type for the right column.
-  // Find a key that all N chosen words have.
   const candidateKeys: AspectKey[] = ["translation", "synonym", "alt1", "alt2", "alt3"];
   let chosenKey: AspectKey | null = null;
-  let chosenWords: Word[] = [];
+  let chosenPairs: { word: Word; idx: number }[] = [];
 
   for (const key of shuffle(candidateKeys, rng)) {
-    const withKey = eligible.filter((w) => {
-      let v = getAspect(w, key);
+    const withKey = eligibleWithIdx.filter((p) => {
+      let v = getAspect(p.word, key);
       if (key === "synonym") v = cleanSynonym(v);
       return v && v.trim();
     });
     if (withKey.length >= N) {
-      // Ensure left-side uniqueness: use the word itself as the left.
-      // Alts could collide, so use the word string.
-      const unique = Array.from(new Set(withKey.map((w) => w.word))).map((s) =>
-        withKey.find((w) => w.word === s)!
+      const unique = Array.from(new Set(withKey.map((p) => p.word.word))).map((s) =>
+        withKey.find((p) => p.word.word === s)!
       );
       if (unique.length >= N) {
         chosenKey = key;
-        chosenWords = sample(unique, N, rng);
+        chosenPairs = sample(unique, N, rng);
         break;
       }
     }
   }
-  if (!chosenKey || chosenWords.length === 0) {
-    // Fallback: translation key.
-    const withTrans = eligible.filter((w) => w.translation && w.translation.trim());
+  if (!chosenKey || chosenPairs.length === 0) {
+    const withTrans = eligibleWithIdx.filter((p) => p.word.translation && p.word.translation.trim());
     if (withTrans.length >= N) {
       chosenKey = "translation";
-      chosenWords = sample(withTrans, N, rng);
+      chosenPairs = sample(withTrans, N, rng);
     } else {
       return null;
     }
   }
 
-  const leftItems = chosenWords.map((w) => w.word);
-  const rightValues = chosenWords.map((w) => {
-    let v = getAspect(w, chosenKey!)!;
+  const leftItems = chosenPairs.map((p) => p.word.word);
+  const rightValues = chosenPairs.map((p) => {
+    let v = getAspect(p.word, chosenKey!)!;
     if (chosenKey === "synonym") v = cleanSynonym(v)!;
     return v;
   });
@@ -401,6 +416,7 @@ export function genMatchPairs(
     leftItems,
     rightItems: shuffledRights,
     correctPairs,
+    wordIndices: chosenPairs.map((p) => p.idx),
   };
 }
 
@@ -549,10 +565,14 @@ export function genFillGap(
     }
   }
 
-  // Within answerToType, show most chars as hints, leave 2-4 chars to fill.
+  // Within answerToType, show MOST chars as hints, leave a small gap to fill.
+  // Spec: "most of it will be given as hints, the user should not be expected
+  // to type anything longer than maybe 1 word."
+  // So the gap should be at most ~half the chars, and at least 2.
   const chars = answerToType.split("");
   if (chars.length < 2) return null;
-  const gapCount = Math.max(2, Math.min(4, Math.floor(chars.length / 2)));
+  // Gap = max(2, floor(len / 3)), capped at 4. This ensures "most" are hints.
+  const gapCount = Math.min(4, Math.max(2, Math.floor(chars.length / 3)));
   // Choose gap positions.
   const positions = chars.map((_, i) => i);
   const gapPositions = new Set(sample(positions, gapCount, rng));
@@ -592,8 +612,10 @@ export function parseSentence(exert: string): { text: string; translation?: stri
         tokens[tokens.length - 1].translation = t.slice(1, -1);
       }
     } else {
-      // Strip punctuation for matching but keep original for display.
-      tokens.push({ text: t });
+      // Keep the original token (with punctuation) for display,
+      // but also store a "clean" version (punctuation stripped) for matching.
+      const clean = t.replace(/[^\p{L}\p{N}]/gu, "");
+      tokens.push({ text: t, clean });
     }
   }
   return tokens;
@@ -617,12 +639,13 @@ export function genSentenceComprehension(
 
   // Eligible to blank: tokens that have a translation bracket (so we know the answer).
   const blankableIndices = parsed
-    .map((t, i) => (t.translation ? i : -1))
+    .map((t, i) => (t.translation && t.clean ? i : -1))
     .filter((i) => i >= 0);
   if (blankableIndices.length < blankCount) return null;
 
   const blankIndices = new Set(sample(blankableIndices, blankCount, rng));
-  const answers = Array.from(blankIndices).map((i) => parsed[i].text);
+  // Use clean text (punctuation stripped) as the answer.
+  const answers = Array.from(blankIndices).map((i) => parsed[i].clean);
 
   // Distractors: other word forms from the lesson.
   const distractorPool = new Set<string>();
@@ -634,7 +657,7 @@ export function genSentenceComprehension(
   const distractors = sample(Array.from(distractorPool), distractorCount, rng);
 
   // Build tokens, removing bracket translations for words with mastery >= 3.
-  // We need to look up the mastery of each token's word in the lesson.
+  // Use clean text for mastery lookups (handles punctuation).
   const wordMastery = new Map<string, number>();
   for (let i = 0; i < lesson.words.length; i++) {
     const w = lesson.words[i];
@@ -646,13 +669,14 @@ export function genSentenceComprehension(
   const tokens = parsed.map((t, i) => {
     const isBlank = blankIndices.has(i);
     if (isBlank) {
-      return { text: "___", blank: true, answer: t.text };
+      return { text: "___", clean: t.clean, blank: true, answer: t.clean };
     }
     // Decide whether to show the bracket translation.
-    const m = wordMastery.get(t.text) ?? -1;
+    const m = wordMastery.get(t.clean) ?? -1;
     const showTranslation = m >= 0 && m < 3;
     return {
       text: t.text,
+      clean: t.clean,
       translation: showTranslation ? t.translation : undefined,
       blank: false,
     };
@@ -679,12 +703,14 @@ export function genShellGame(
   mastery: number,
   rng: () => number = Math.random
 ): ShellGameSpec | null {
+  // ShellGame is at difficulty 4, so mastery >= 4.
+  // Scale: mastery 4 -> 4 shells, mastery 5 -> 5 shells, mastery 6+ -> 6 shells.
   const shellCounts = [4, 5, 6];
-  const idx = Math.min(shellCounts.length - 1, Math.floor(mastery / 2));
+  const idx = Math.min(shellCounts.length - 1, Math.max(0, mastery - 4));
   const N = shellCounts[idx];
 
-  // Gather shell item candidates from THIS word only (the spec says
-  // "N of the word, any of its alt forms, its synonym, or direct translation are chosen").
+  // Gather shell item candidates from THIS word only.
+  // Spec: "N of the word, any of its alt forms, its synonym, or direct translation".
   const candidates: { value: string; key: AspectKey }[] = [];
   for (const f of wordForms(word)) candidates.push({ value: f, key: "word" });
   if (word.synonym) {
@@ -696,20 +722,7 @@ export function genShellGame(
 
   if (candidates.length < 2) return null;
 
-  // If we don't have N unique candidates, we can reuse some — but better to
-  // just use what we have (min 2). Actually the spec says N shells, so we need N items.
-  // If we have fewer than N unique candidates, pad with duplicates? No — that breaks
-  // "no two answer choices the same". Instead, fall back to using aspects from the
-  // word (definition, explanation) as additional shell items.
-  if (candidates.length < N) {
-    if (word.definition) candidates.push({ value: word.definition, key: "definition" });
-    if (word.explanation) candidates.push({ value: word.explanation, key: "explanation" });
-    if (word.alt1) candidates.push({ value: word.alt1, key: "alt1" });
-    if (word.alt2) candidates.push({ value: word.alt2, key: "alt2" });
-    if (word.alt3) candidates.push({ value: word.alt3, key: "alt3" });
-  }
-
-  // Deduplicate by value.
+  // Deduplicate by value. Only use spec-allowed aspects (word/alt/synonym/translation).
   const unique = new Map<string, { value: string; key: AspectKey }>();
   for (const c of candidates) {
     if (!unique.has(c.value)) unique.set(c.value, c);
@@ -717,6 +730,7 @@ export function genShellGame(
   const uniqueArr = Array.from(unique.values());
   if (uniqueArr.length < 2) return null;
 
+  // Use as many shells as we have unique items, capped at N.
   const shellCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
   const actualN = shellCandidates.length;
 
@@ -778,8 +792,10 @@ export function genMemoryGrid(
   mastery: number,
   rng: () => number = Math.random
 ): MemoryGridSpec | null {
+  // MemoryGrid is at difficulty 4, so mastery >= 4.
+  // Scale: mastery 4 -> 4 cards, mastery 5 -> 6 cards, mastery 6+ -> 9 cards.
   const cardCounts = [4, 6, 9];
-  const idx = Math.min(cardCounts.length - 1, Math.floor(mastery / 2));
+  const idx = Math.min(cardCounts.length - 1, Math.max(0, mastery - 4));
   const N = cardCounts[idx];
 
   // Same as shell game: gather candidates from the word.

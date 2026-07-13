@@ -353,18 +353,15 @@ for (let mastery = 1; mastery <= 5; mastery++) {
   }
 }
 
-// ===== Edge case: word with only translation =====
+// ===== Edge case: word with only translation (single-word lesson) =====
 console.log("\n=== Edge case: minimal word ===");
 {
   const minimalWord: Word = { word: "hi", translation: "hola" };
   const minimalLesson = createLesson("Min", [minimalWord]);
   const spec = genPickAnswer(minimalLesson, minimalWord, 1);
-  // With only translation, pick-answer should still work
-  check(spec !== null, "PickAnswer on minimal word should work");
-  if (spec) {
-    check(spec.options.length === 2, "PickAnswer minimal: 2 options");
-    check(spec.correctAnswer === "hola", "PickAnswer minimal: correct is translation");
-  }
+  // With only 1 word in the lesson, there are no distractors, so PickAnswer
+  // should return null (can't make a multiple-choice with 1 option).
+  check(spec === null, "PickAnswer on single-word lesson should return null (no distractors)");
 }
 
 // ===== Edge case: word with no sentences (sentence comp) =====

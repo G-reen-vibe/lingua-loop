@@ -95,17 +95,14 @@ export function recordReview(
         next.mastery = next.mastery + 1;
         next.streakAtLevel = 0;
       }
-    } else if (formatDiff < next.mastery) {
-      // reviewing below level — keep streak, no level up
-      // reset streak at level since they're not challenging current level
-      // (we keep it as-is to avoid penalizing mixed reviews)
     }
+    // For formats below current mastery, don't change streak (reviewing easier material).
   } else {
-    // Incorrect answer resets the streak at the current level.
-    next.streakAtLevel = 0;
-    // For formats below the word's mastery, do not drop mastery.
-    // We only reset streak; mastery only drops on repeated failure at current level.
-    // (Keeping it simple: mastery never decreases in this app.)
+    // Incorrect answer: only reset streak if the failure was AT the current level.
+    // Failures on below-level formats don't reset the at-level streak.
+    if (formatDiff >= next.mastery) {
+      next.streakAtLevel = 0;
+    }
   }
 
   return next;
@@ -125,14 +122,21 @@ export function isWordDue(
 }
 
 // Words eligible for introduction: never seen, and the daily new-word budget allows.
+// Pure function: does NOT mutate the lesson. Returns the count of new words
+// seen today, resetting if the date has changed.
+export function getNewWordsSeenToday(lesson: Lesson): number {
+  if (lesson.newWordsDate !== todayStrLocal()) {
+    return 0; // date changed, budget resets
+  }
+  return lesson.newWordsSeenToday;
+}
+
 export function wordsForIntroduction(
   lesson: Lesson
 ): WordProgress[] {
-  if (lesson.newWordsDate !== todayStrLocal()) {
-    lesson.newWordsSeenToday = 0;
-    lesson.newWordsDate = todayStrLocal();
-  }
-  const budget = lesson.settings.maxNewWordsDaily - lesson.newWordsSeenToday;
+  // Read-only: do not mutate lesson here. The store handles mutations.
+  const seenToday = getNewWordsSeenToday(lesson);
+  const budget = lesson.settings.maxNewWordsDaily - seenToday;
   if (budget <= 0) return [];
   const neverSeen = lesson.progress.filter((p) => !p.seen);
   // Also require that existing words meet the min-mastery threshold before
@@ -226,9 +230,12 @@ export function pickNextFormat(
 ): FormatKind | null {
   const alg = lesson.settings.algorithm;
 
-  // 1. Introduction — always first priority if there are never-seen words.
+  // 1. Introduction — serve for never-seen words. We avoid serving introduction
+  //    twice in a row (to mix in practice), but we DO allow multiple introductions
+  //    in a session for different words.
   const introWords = wordsForIntroduction(lesson);
-  if (introWords.length > 0 && !recentFormats.includes("introduction")) {
+  const lastFormat = recentFormats[recentFormats.length - 1];
+  if (introWords.length > 0 && lastFormat !== "introduction") {
     return "introduction";
   }
 
