@@ -190,11 +190,24 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
   useEffect(() => {
     if (!marblePos || phase !== "dropping") return;
 
+    const startTime = Date.now();
     const step = () => {
+      // Safety: if marble has been dropping for > 8 seconds, force-land it.
+      if (Date.now() - startTime > 8000) {
+        const slot = Math.floor(Math.random() * SLOT_COUNT);
+        setLandedSlot(slot);
+        setPhase("landed");
+        playSound("drop");
+        return;
+      }
       setMarblePos((prev) => {
         if (!prev) return null;
         let { x, y, vx, vy } = prev;
         vy += GRAVITY;
+        // Cap velocity to prevent runaway.
+        const maxV = 6;
+        vx = Math.max(-maxV, Math.min(maxV, vx));
+        vy = Math.max(-maxV, Math.min(maxV, vy));
         x += vx;
         y += vy;
 
@@ -220,6 +233,8 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
             const dot = vx * nx + vy * ny;
             vx = (vx - 2 * dot * nx) * PEG_BOUNCE;
             vy = (vy - 2 * dot * ny) * PEG_BOUNCE;
+            // Ensure minimum downward velocity so the marble always progresses.
+            if (vy < 0.5) vy = 0.5;
             playSound("tick");
           }
         }
@@ -238,7 +253,7 @@ export function MarbleGameFormat({ spec, onAnswer, disabled, feedback }: Props) 
 
     const interval = setInterval(step, 16);
     return () => clearInterval(interval);
-  }, [marblePos, phase]);
+  }, [marblePos, phase, SLOT_COUNT]);
 
   // Redraw on every relevant state change.
   useEffect(() => {
