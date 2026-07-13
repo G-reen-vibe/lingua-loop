@@ -599,21 +599,31 @@ export function genFillGap(
 // Choose a sentence, blank out N words. Words with mastery >= 3 have bracket
 // translations removed; below that, kept.
 
-export function parseSentence(exert: string): { text: string; translation?: string }[] {
-  // exert format: "El [the] gato [cat] duerme [sleeps]"
+export function parseSentence(exert: string): { text: string; clean: string; translation?: string }[] {
+  // exert format: "El [the] gato [cat] duerme [sleeps]."
   // Tokens separated by spaces. Each token is either a word or "[translation]".
   // The bracket immediately follows the word it translates.
+  // Punctuation may be attached to the closing bracket (e.g. "[big].").
   const rawTokens = exert.split(/\s+/).filter((t) => t.length > 0);
-  const tokens: { text: string; translation?: string }[] = [];
+  const tokens: { text: string; clean: string; translation?: string }[] = [];
   for (const t of rawTokens) {
-    if (t.startsWith("[") && t.endsWith("]")) {
-      // translation for the previous token
+    // Check if this token is a translation bracket: starts with "[", contains
+    // a closing "]", and everything before the "]" is the translation.
+    // Trailing punctuation after "]" is allowed (e.g. "[big].").
+    const bracketMatch = t.match(/^\[([^\]]+)\](.*)$/);
+    if (bracketMatch) {
+      // This is a translation bracket for the previous token.
+      const translation = bracketMatch[1];
+      const trailingPunct = bracketMatch[2];
       if (tokens.length > 0) {
-        tokens[tokens.length - 1].translation = t.slice(1, -1);
+        tokens[tokens.length - 1].translation = translation;
+        // Attach trailing punctuation to the previous token's display text.
+        if (trailingPunct) {
+          tokens[tokens.length - 1].text += trailingPunct;
+        }
       }
     } else {
-      // Keep the original token (with punctuation) for display,
-      // but also store a "clean" version (punctuation stripped) for matching.
+      // Regular word token.
       const clean = t.replace(/[^\p{L}\p{N}]/gu, "");
       tokens.push({ text: t, clean });
     }
