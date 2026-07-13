@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MatchPairsSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
 import { Check } from "lucide-react";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
   spec: MatchPairsSpec;
@@ -19,7 +20,6 @@ export function MatchPairsFormat({ spec, onAnswer, disabled, feedback }: Props) 
   const [errors, setErrors] = useState(0);
   const [wrongPair, setWrongPair] = useState<{ left: string; right: string } | null>(null);
 
-  // Build a mapping from left to correct right.
   const correctMap: Record<string, string> = {};
   for (const p of spec.correctPairs) {
     correctMap[p.left] = p.right;
@@ -27,22 +27,21 @@ export function MatchPairsFormat({ spec, onAnswer, disabled, feedback }: Props) 
 
   const handleClickLeft = (item: string) => {
     if (disabled || matched[item]) return;
+    playSound("click");
     setSelectedLeft(item);
-    if (selectedRight) {
-      tryMatch(item, selectedRight);
-    }
+    if (selectedRight) tryMatch(item, selectedRight);
   };
 
   const handleClickRight = (item: string) => {
     if (disabled || Object.values(matched).includes(item)) return;
+    playSound("click");
     setSelectedRight(item);
-    if (selectedLeft) {
-      tryMatch(selectedLeft, item);
-    }
+    if (selectedLeft) tryMatch(selectedLeft, item);
   };
 
   const tryMatch = (left: string, right: string) => {
     if (correctMap[left] === right) {
+      playSound("correct");
       const newMatched = { ...matched, [left]: right };
       setMatched(newMatched);
       setSelectedLeft(null);
@@ -52,6 +51,7 @@ export function MatchPairsFormat({ spec, onAnswer, disabled, feedback }: Props) 
         onAnswer(correct, correct ? undefined : `${errors} mistake(s)`);
       }
     } else {
+      playSound("incorrect");
       setErrors((e) => e + 1);
       setWrongPair({ left, right });
       setTimeout(() => {
@@ -61,6 +61,8 @@ export function MatchPairsFormat({ spec, onAnswer, disabled, feedback }: Props) 
       }, 600);
     }
   };
+
+  const matchedStyle = "theme-border theme-bg-light opacity-60";
 
   return (
     <Card>
@@ -87,13 +89,14 @@ export function MatchPairsFormat({ spec, onAnswer, disabled, feedback }: Props) 
                   disabled={disabled || isMatched}
                   className={`w-full p-3 rounded-lg border-2 text-center font-medium transition-colors ${
                     isMatched
-                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 opacity-60"
+                      ? matchedStyle
                       : isWrong
                       ? "border-rose-500 bg-rose-50 dark:bg-rose-900/20"
                       : isSelected
-                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
-                      : "border-border hover:border-emerald-300 hover:bg-muted/30"
+                      ? "theme-border theme-bg-light"
+                      : "border-border theme-border-hover hover:bg-muted/30"
                   }`}
+                  style={isMatched || isSelected ? { borderColor: "var(--theme-primary)" } : {}}
                 >
                   <div className="flex items-center justify-center gap-2">
                     {item}
@@ -116,13 +119,14 @@ export function MatchPairsFormat({ spec, onAnswer, disabled, feedback }: Props) 
                   disabled={disabled || isMatched}
                   className={`w-full p-3 rounded-lg border-2 text-center text-sm transition-colors ${
                     isMatched
-                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 opacity-60"
+                      ? matchedStyle
                       : isWrong
                       ? "border-rose-500 bg-rose-50 dark:bg-rose-900/20"
                       : isSelected
-                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
-                      : "border-border hover:border-emerald-300 hover:bg-muted/30"
+                      ? "theme-border theme-bg-light"
+                      : "border-border theme-border-hover hover:bg-muted/30"
                   }`}
+                  style={isMatched || isSelected ? { borderColor: "var(--theme-primary)" } : {}}
                 >
                   <div className="flex items-center justify-center gap-2">
                     {item}

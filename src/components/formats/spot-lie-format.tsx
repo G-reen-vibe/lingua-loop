@@ -4,6 +4,7 @@ import { useState } from "react";
 import { SpotLieSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
 import { X, Check } from "lucide-react";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
   spec: SpotLieSpec;
@@ -19,8 +20,8 @@ export function SpotLieFormat({ spec, onAnswer, disabled, feedback }: Props) {
     if (disabled || selected !== null) return;
     setSelected(idx);
     const pair = spec.pairs[idx];
-    // Correct = user picked the INCORRECT pair (the lie).
     const correct = !pair.correct;
+    playSound(correct ? "correct" : "incorrect");
     onAnswer(correct, correct ? undefined : `The lie was: ${pair.left} — ${pair.right}`);
   };
 
@@ -52,9 +53,10 @@ export function SpotLieFormat({ spec, onAnswer, disabled, feedback }: Props) {
                     : showResult && isSelected && !isLie
                     ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                     : showResult && !isLie
-                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
-                    : "border-border hover:border-emerald-300 hover:bg-muted/30"
+                    ? "theme-border theme-bg-light"
+                    : "border-border theme-border-hover hover:bg-muted/30"
                 }`}
+                style={showResult && !isLie ? { borderColor: "var(--theme-primary)" } : {}}
               >
                 <div className="flex-1 flex items-center justify-center gap-3">
                   <span className="font-medium text-base">{pair.left}</span>
@@ -63,7 +65,7 @@ export function SpotLieFormat({ spec, onAnswer, disabled, feedback }: Props) {
                 </div>
                 {showResult && isLie && <X className="w-5 h-5 text-rose-500" />}
                 {showResult && !isLie && isSelected && <X className="w-5 h-5 text-amber-500" />}
-                {showResult && !isLie && !isSelected && <Check className="w-5 h-5 text-emerald-500" />}
+                {showResult && !isLie && !isSelected && <Check className="w-5 h-5 theme-text" />}
               </button>
             );
           })}

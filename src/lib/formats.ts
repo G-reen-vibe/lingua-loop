@@ -157,13 +157,32 @@ export interface ShellGameSpec {
   shuffleOrder: number[]; // final positions after shuffle
 }
 
-export interface MemoryGridSpec {
-  format: "memory-grid";
+export interface CardGameSpec {
+  format: "card-game";
   cardItems: string[]; // what's on each card
   cardKeys: AspectKey[];
   prompt: string;
   promptKey: AspectKey;
   correctCard: number;
+}
+
+export interface MarbleGameSpec {
+  format: "marble-game";
+  slotItems: string[]; // word/alt/synonym/translation in each slot
+  slotKeys: AspectKey[];
+  // For each sub-question: the slot the marble lands in, the prompt aspect,
+  // and the answer options.
+  prompt: string;
+  promptKey: AspectKey;
+  correctSlot: number; // index of the slot the marble landed in
+  options: string[]; // aspect options for the user to pick from
+}
+
+export interface SentenceTranslationSpec {
+  format: "sentence-translation";
+  translation: string; // the translation shown to the user
+  tokens: { text: string; clean: string; translation?: string; blank: boolean; answer?: string }[];
+  options: string[]; // answer choices for blanks
 }
 
 export type QuestionSpec =
@@ -174,8 +193,10 @@ export type QuestionSpec =
   | WordScrambleSpec
   | FillGapSpec
   | SentenceComprehensionSpec
+  | SentenceTranslationSpec
   | ShellGameSpec
-  | MemoryGridSpec;
+  | CardGameSpec
+  | MarbleGameSpec;
 
 // ===== Introduction =====
 
@@ -749,23 +770,64 @@ export function genShellGame(
   };
 }
 
-// ===== Memory Grid =====
+// ===== Card Game =====
 // Like shell game but with cards the user can rearrange.
-// {4, 6, 9} cards based on mastery.
+// {4, 6, 9} cards based on mastery. Any aspect (incl. def/explanation) can be a card.
 
-export function genMemoryGrid(
+export function genCardGame(
   lesson: Lesson,
   word: Word,
   mastery: number,
   rng: () => number = Math.random
-): MemoryGridSpec | null {
-  // MemoryGrid is at difficulty 4, so mastery >= 4.
+): CardGameSpec | null {
+  // CardGame is at difficulty 4, so mastery >= 4.
   // Scale: mastery 4 -> 4 cards, mastery 5 -> 6 cards, mastery 6+ -> 9 cards.
   const cardCounts = [4, 6, 9];
   const idx = Math.min(cardCounts.length - 1, Math.max(0, mastery - 4));
   const N = cardCounts[idx];
 
-  // Same as shell game: gather candidates from the word.
+  // Gather ALL aspects of the word (including def/explanation).
+  const aspectMap = new Map<string, { value: string; key: AspectKey }>();
+  for (const a of availableAspects(word)) {
+    if (!aspectMap.has(a.value)) aspectMap.set(a.value, a);
+  }
+  const uniqueArr = Array.from(aspectMap.values());
+  if (uniqueArr.length < 2) return null;
+
+  const cardCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
+  const targetIdx = Math.floor(rng() * cardCandidates.length);
+  const targetCard = cardCandidates[targetIdx];
+
+  return {
+    format: "card-game",
+    cardItems: cardCandidates.map((c) => c.value),
+    cardKeys: cardCandidates.map((c) => c.key),
+    prompt: targetCard.value,
+    promptKey: targetCard.key,
+    correctCard: targetIdx,
+  };
+}
+
+// ===== Marble Game =====
+// Plinko-style: marbles drop through pegs into slots.
+// {6, 9, 12} slots based on mastery. Each slot has a word/alt/synonym/translation.
+// A marble is shot from a rotating cannon, bounces off pegs, lands in a slot.
+// User must pick the aspect corresponding to the slot.
+// Served multiple times per setup (same slots).
+
+export function genMarbleGame(
+  lesson: Lesson,
+  word: Word,
+  mastery: number,
+  rng: () => number = Math.random
+): MarbleGameSpec | null {
+  // MarbleGame is at difficulty 4, so mastery >= 4.
+  // Scale: mastery 4 -> 6 slots, mastery 5 -> 9 slots, mastery 6+ -> 12 slots.
+  const slotCounts = [6, 9, 12];
+  const idx = Math.min(slotCounts.length - 1, Math.max(0, mastery - 4));
+  const N = slotCounts[idx];
+
+  // Gather spec-allowed aspects: word/alt/synonym/translation.
   const candidates: { value: string; key: AspectKey }[] = [];
   for (const f of wordForms(word)) candidates.push({ value: f, key: "word" });
   if (word.synonym) {
@@ -774,15 +836,7 @@ export function genMemoryGrid(
   }
   if (word.translation)
     candidates.push({ value: word.translation, key: "translation" });
-  if (word.definition)
-    candidates.push({ value: word.definition, key: "definition" });
-  if (word.explanation)
-    candidates.push({ value: word.explanation, key: "explanation" });
-  if (word.alt1) candidates.push({ value: word.alt1, key: "alt1" });
-  if (word.alt2) candidates.push({ value: word.alt2, key: "alt2" });
-  if (word.alt3) candidates.push({ value: word.alt3, key: "alt3" });
 
-  // Deduplicate by value.
   const unique = new Map<string, { value: string; key: AspectKey }>();
   for (const c of candidates) {
     if (!unique.has(c.value)) unique.set(c.value, c);
@@ -790,17 +844,100 @@ export function genMemoryGrid(
   const uniqueArr = Array.from(unique.values());
   if (uniqueArr.length < 2) return null;
 
-  const cardCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
+  // We need N slots but may have fewer unique items. If so, we can't make
+  // a valid game (duplicate slots would be ambiguous). Return null and let
+  // the session controller fall back to another format.
+  if (uniqueArr.length < N) return null;
 
-  const targetIdx = Math.floor(rng() * cardCandidates.length);
-  const targetCard = cardCandidates[targetIdx];
+  const slotCandidates = sample(uniqueArr, N, rng);
+  const targetIdx = Math.floor(rng() * slotCandidates.length);
+  const targetSlot = slotCandidates[targetIdx];
+
+  // Build answer options: the target slot's value + distractors from other words.
+  // The prompt is an aspect of the word; the user picks which slot it corresponds to.
+  // Since all slots are from the same word, the prompt = the target slot's value
+  // (same as shell game). Options = all slot values (the user picks one).
+  const options = shuffle(slotCandidates.map((s) => s.value), rng);
 
   return {
-    format: "memory-grid",
-    cardItems: cardCandidates.map((c) => c.value),
-    cardKeys: cardCandidates.map((c) => c.key),
-    prompt: targetCard.value,
-    promptKey: targetCard.key,
-    correctCard: targetIdx,
+    format: "marble-game",
+    slotItems: slotCandidates.map((s) => s.value),
+    slotKeys: slotCandidates.map((s) => s.key),
+    prompt: targetSlot.value,
+    promptKey: targetSlot.key,
+    correctSlot: targetIdx,
+    options,
+  };
+}
+
+// ===== Sentence Translation =====
+// The translation of a sentence is shown. A sentence is chosen with words
+// whose mastery >= 3 having bracket translations removed. More blanks than
+// sentence comprehension. User fills blanks from answer choices.
+
+export function genSentenceTranslation(
+  lesson: Lesson,
+  word: Word,
+  mastery: number,
+  rng: () => number = Math.random
+): SentenceTranslationSpec | null {
+  if (!word.sentences || word.sentences.length === 0) return null;
+  const sentence = randomItem(word.sentences, rng);
+  const parsed = parseSentence(sentence.exert);
+  if (parsed.length < 3) return null;
+
+  // More blanks than sentence comprehension: 2 + floor(mastery / 2), capped at 5.
+  const blankCount = Math.min(5, 2 + Math.floor(mastery / 2));
+  // Distractors: 2 + floor(mastery / 2), capped at 5.
+  const distractorCount = Math.min(5, 2 + Math.floor(mastery / 2));
+
+  const blankableIndices = parsed
+    .map((t, i) => (t.translation && t.clean ? i : -1))
+    .filter((i) => i >= 0);
+  if (blankableIndices.length < blankCount) return null;
+
+  const blankIndices = new Set(sample(blankableIndices, blankCount, rng));
+  const answers = Array.from(blankIndices).map((i) => parsed[i].clean);
+
+  // Distractors: other word forms from the lesson.
+  const distractorPool = new Set<string>();
+  for (const w of lesson.words) {
+    for (const f of wordForms(w)) {
+      if (!answers.includes(f)) distractorPool.add(f);
+    }
+  }
+  const distractors = sample(Array.from(distractorPool), distractorCount, rng);
+
+  // Build word mastery map for translation visibility.
+  const wordMastery = new Map<string, number>();
+  for (let i = 0; i < lesson.words.length; i++) {
+    const w = lesson.words[i];
+    const p = lesson.progress[i];
+    for (const f of wordForms(w)) wordMastery.set(f, p?.mastery ?? 0);
+  }
+
+  const tokens = parsed.map((t, i) => {
+    const isBlank = blankIndices.has(i);
+    if (isBlank) {
+      return { text: "___", clean: t.clean, blank: true, answer: t.clean };
+    }
+    const m = wordMastery.get(t.clean) ?? -1;
+    // Words with mastery >= 3 (the requirement to reach difficulty 3) lose translations.
+    const showTranslation = m >= 0 && m < 3;
+    return {
+      text: t.text,
+      clean: t.clean,
+      translation: showTranslation ? t.translation : undefined,
+      blank: false,
+    };
+  });
+
+  const options = shuffle([...answers, ...distractors], rng);
+
+  return {
+    format: "sentence-translation",
+    translation: sentence.translation,
+    tokens,
+    options,
   };
 }

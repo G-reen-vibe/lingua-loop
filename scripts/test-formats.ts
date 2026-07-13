@@ -9,8 +9,10 @@ import {
   genWordScramble,
   genFillGap,
   genSentenceComprehension,
+  genSentenceTranslation,
   genShellGame,
-  genMemoryGrid,
+  genCardGame,
+  genMarbleGame,
   QuestionSpec,
 } from "../src/lib/formats";
 import { createLesson } from "../src/lib/storage";
@@ -327,29 +329,83 @@ for (let mastery = 1; mastery <= 5; mastery++) {
   }
 }
 
-// ===== Memory Grid =====
-console.log("\n=== Memory Grid ===");
-for (let mastery = 1; mastery <= 5; mastery++) {
+// ===== Card Game =====
+console.log("\n=== Card Game ===");
+for (let mastery = 4; mastery <= 5; mastery++) {
   for (let attempt = 0; attempt < 10; attempt++) {
-    const spec = genMemoryGrid(lesson, testWords[0], mastery);
+    const spec = genCardGame(lesson, testWords[0], mastery);
     if (!spec) continue;
-    const expectedN = [4, 6, 9][Math.min(2, Math.floor(mastery / 2))];
     check(
       spec.cardItems.length >= 2,
-      `MemoryGrid: need >= 2 cards, got ${spec.cardItems.length}`
+      `CardGame: need >= 2 cards, got ${spec.cardItems.length}`
     );
     check(
       new Set(spec.cardItems).size === spec.cardItems.length,
-      "MemoryGrid: card items must be unique"
+      "CardGame: card items must be unique"
     );
     check(
       spec.cardItems.includes(spec.prompt),
-      "MemoryGrid: prompt must be a card item"
+      "CardGame: prompt must be a card item"
     );
     check(
       spec.cardItems[spec.correctCard] === spec.prompt,
-      "MemoryGrid: correctCard item must match prompt"
+      "CardGame: correctCard item must match prompt"
     );
+  }
+}
+
+// ===== Marble Game =====
+console.log("\n=== Marble Game ===");
+for (let mastery = 4; mastery <= 5; mastery++) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const spec = genMarbleGame(lesson, testWords[0], mastery);
+    if (!spec) continue;
+    const expectedN = [6, 9, 12][Math.min(2, mastery - 4)];
+    check(
+      spec.slotItems.length === expectedN,
+      `MarbleGame: expected ${expectedN} slots, got ${spec.slotItems.length}`
+    );
+    check(
+      new Set(spec.slotItems).size === spec.slotItems.length,
+      "MarbleGame: slot items must be unique"
+    );
+    check(
+      spec.slotItems.includes(spec.prompt),
+      "MarbleGame: prompt must be a slot item"
+    );
+    check(
+      spec.slotItems[spec.correctSlot] === spec.prompt,
+      "MarbleGame: correctSlot item must match prompt"
+    );
+    check(
+      spec.options.length === spec.slotItems.length,
+      "MarbleGame: options should match slot count"
+    );
+  }
+}
+
+// ===== Sentence Translation =====
+console.log("\n=== Sentence Translation ===");
+for (let mastery = 3; mastery <= 5; mastery++) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const spec = genSentenceTranslation(lesson, testWords[0], mastery);
+    if (!spec) continue;
+    const blanks = spec.tokens.filter((t) => t.blank);
+    check(blanks.length >= 2, `SentenceTranslation: must have >= 2 blanks, got ${blanks.length}`);
+    for (const b of blanks) {
+      check(!!b.answer, "SentenceTranslation: blank must have an answer");
+    }
+    for (const b of blanks) {
+      check(
+        spec.options.includes(b.answer!),
+        "SentenceTranslation: options must contain blank answer"
+      );
+    }
+    check(
+      new Set(spec.options).size === spec.options.length,
+      "SentenceTranslation: options must be unique"
+    );
+    check(!!spec.translation, "SentenceTranslation: must have a translation");
   }
 }
 
@@ -359,8 +415,6 @@ console.log("\n=== Edge case: minimal word ===");
   const minimalWord: Word = { word: "hi", translation: "hola" };
   const minimalLesson = createLesson("Min", [minimalWord]);
   const spec = genPickAnswer(minimalLesson, minimalWord, 1);
-  // With only 1 word in the lesson, there are no distractors, so PickAnswer
-  // should return null (can't make a multiple-choice with 1 option).
   check(spec === null, "PickAnswer on single-word lesson should return null (no distractors)");
 }
 

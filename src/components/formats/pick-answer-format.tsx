@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PickAnswerSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
   spec: PickAnswerSpec;
@@ -19,6 +20,7 @@ export function PickAnswerFormat({ spec, onAnswer, disabled, feedback }: Props) 
     if (disabled || selected) return;
     setSelected(option);
     const correct = option === spec.correctAnswer;
+    playSound(correct ? "correct" : "incorrect");
     onAnswer(correct, correct ? undefined : `Correct answer: ${spec.correctAnswer}`);
   };
 
@@ -45,11 +47,12 @@ export function PickAnswerFormat({ spec, onAnswer, disabled, feedback }: Props) 
                 disabled={disabled || selected !== null}
                 className={`justify-start text-left h-auto py-3 px-4 ${
                   showResult && isCorrect
-                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300"
+                    ? "theme-border theme-bg-light"
                     : showResult && isSelected && !isCorrect
                     ? "border-rose-500 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300"
-                    : "hover:border-emerald-300"
+                    : "theme-border-hover"
                 }`}
+                style={showResult && isCorrect ? { borderColor: "var(--theme-primary)" } : {}}
               >
                 <span className="text-base">{option}</span>
               </Button>

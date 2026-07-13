@@ -16,8 +16,10 @@ import {
   genWordScramble,
   genFillGap,
   genSentenceComprehension,
+  genSentenceTranslation,
   genShellGame,
-  genMemoryGrid,
+  genCardGame,
+  genMarbleGame,
   QuestionSpec,
 } from "../src/lib/formats";
 import { createLesson } from "../src/lib/storage";
@@ -63,8 +65,8 @@ function simulateSession(
 
   const allFormats: FormatKind[] = [
     "introduction", "pick-answer", "spot-lie", "match-pairs",
-    "word-scramble", "fill-gap", "sentence-comprehension",
-    "shell-game", "memory-grid",
+    "word-scramble", "fill-gap", "sentence-comprehension", "sentence-translation",
+    "shell-game", "card-game", "marble-game",
   ];
 
   let iter = 0;
@@ -112,8 +114,10 @@ function simulateSession(
             case "word-scramble": spec = genWordScramble(lessonCopy, word, wp.mastery); break;
             case "fill-gap": spec = genFillGap(lessonCopy, word, wp.mastery); break;
             case "sentence-comprehension": spec = genSentenceComprehension(lessonCopy, word, wp.mastery); break;
+            case "sentence-translation": spec = genSentenceTranslation(lessonCopy, word, wp.mastery); break;
             case "shell-game": spec = genShellGame(lessonCopy, word, wp.mastery); break;
-            case "memory-grid": spec = genMemoryGrid(lessonCopy, word, wp.mastery); break;
+            case "card-game": spec = genCardGame(lessonCopy, word, wp.mastery); break;
+            case "marble-game": spec = genMarbleGame(lessonCopy, word, wp.mastery); break;
           }
         } catch (e) {
           if (verbose) console.error(`  Generator ${format} threw: ${(e as Error).message}`);

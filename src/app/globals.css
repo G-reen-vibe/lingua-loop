@@ -120,3 +120,40 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ===== Theme utility classes ===== */
+/* These reference CSS variables set by themes.ts at runtime. */
+
+.theme-primary {
+  background-color: var(--theme-primary);
+}
+.theme-primary-hover:hover {
+  background-color: var(--theme-primary-hover);
+}
+.theme-text {
+  color: var(--theme-primary);
+}
+.theme-text-hover:hover {
+  color: var(--theme-primary);
+}
+.theme-border {
+  border-color: var(--theme-primary);
+}
+.theme-border-hover:hover {
+  border-color: var(--theme-primary);
+}
+.theme-bg-light {
+  background-color: var(--theme-primary-light);
+}
+.theme-bg-dark {
+  background-color: var(--theme-primary-dark);
+}
+.theme-gradient {
+  background-image: linear-gradient(to bottom, var(--theme-gradient-from), var(--theme-gradient-to));
+}
+.theme-ring:focus {
+  outline-color: var(--theme-ring);
+}
+.dark .theme-gradient {
+  background-image: linear-gradient(to bottom, var(--theme-primary-dark), var(--background));
+}

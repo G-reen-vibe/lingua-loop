@@ -1,22 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { SentenceComprehensionSpec } from "@/lib/formats";
+import { SentenceTranslationSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { playSound } from "@/lib/sounds";
 
 interface Props {
-  spec: SentenceComprehensionSpec;
+  spec: SentenceTranslationSpec;
   onAnswer: (correct: boolean, message?: string) => void;
   disabled: boolean;
   feedback: null | { correct: boolean; message?: string };
 }
 
-export function SentenceComprehensionFormat({ spec, onAnswer, disabled, feedback }: Props) {
-  // Track which blank is filled with which option.
-  // blanks: array of { idx, answer, filled }
+export function SentenceTranslationFormat({ spec, onAnswer, disabled, feedback }: Props) {
   const blankIndices = spec.tokens
     .map((t, i) => (t.blank ? i : -1))
     .filter((i) => i >= 0);
@@ -77,12 +75,13 @@ export function SentenceComprehensionFormat({ spec, onAnswer, disabled, feedback
       <CardContent className="p-6 space-y-4">
         <div className="text-center">
           <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-            Sentence Comprehension
+            Sentence Translation
           </div>
-          <div className="text-sm text-muted-foreground">Fill in the blanks</div>
+          <div className="text-sm text-muted-foreground">Translate to the target language:</div>
+          <div className="text-lg font-semibold mt-2 italic">{spec.translation}</div>
         </div>
 
-        {/* Sentence */}
+        {/* Sentence with blanks */}
         <div className="bg-muted/30 rounded-lg p-4 text-lg leading-relaxed flex flex-wrap gap-1 items-center">
           {spec.tokens.map((token, i) => {
             if (!token.blank) {
@@ -109,16 +108,11 @@ export function SentenceComprehensionFormat({ spec, onAnswer, disabled, feedback
                     ? "theme-border theme-bg-light"
                     : "border-dashed border-muted-foreground/40"
                 }`}
-                style={value || isActive ? { borderColor: "var(--theme-primary)" } : {}}
               >
                 {value || "___"}
               </button>
             );
           })}
-        </div>
-
-        <div className="text-xs text-muted-foreground text-center italic">
-          {spec.translation}
         </div>
 
         {/* Options */}
@@ -133,7 +127,7 @@ export function SentenceComprehensionFormat({ spec, onAnswer, disabled, feedback
                 className={`px-3 py-1.5 rounded-lg border-2 text-sm font-medium transition-colors ${
                   isUsed
                     ? "border-muted bg-muted/30 opacity-30"
-                    : "theme-border theme-bg-light hover:opacity-80"
+                    : "theme-border-hover border-theme-primary theme-bg-light hover:opacity-80"
                 }`}
                 style={!isUsed ? { borderColor: "var(--theme-primary)" } : {}}
               >

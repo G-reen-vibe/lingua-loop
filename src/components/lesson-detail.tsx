@@ -68,7 +68,7 @@ export function LessonDetail({ lessonId }: { lessonId: string }) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950/20 dark:to-background">
+    <div className="min-h-screen flex flex-col theme-gradient">
       <header className="border-b bg-white/80 dark:bg-background/80 backdrop-blur sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -111,7 +111,7 @@ export function LessonDetail({ lessonId }: { lessonId: string }) {
                   <div key={i} className="flex-1 flex flex-col items-center gap-1">
                     <div className="w-full flex-1 flex items-end relative">
                       <div className="w-full bg-muted rounded-t overflow-hidden flex flex-col justify-end" style={{ height: `${h}%` }}>
-                        <div className="w-full bg-emerald-500" style={{ height: `${correctH}%` }} />
+                        <div className="w-full theme-primary" style={{ height: `${correctH}%` }} />
                       </div>
                     </div>
                     <span className="text-xs text-muted-foreground">{d.date}</span>
@@ -121,7 +121,7 @@ export function LessonDetail({ lessonId }: { lessonId: string }) {
               })}
             </div>
             <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500" /> Correct</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded theme-primary" /> Correct</span>
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-muted" /> Incorrect</span>
             </div>
           </CardContent>
@@ -337,7 +337,7 @@ function StudyModeCard({
   onClick: () => void;
 }) {
   const colorMap = {
-    emerald: "bg-emerald-500 hover:bg-emerald-600 text-emerald-50",
+    emerald: "theme-primary theme-primary-hover text-white",
     sky: "bg-sky-500 hover:bg-sky-600 text-sky-50",
     rose: "bg-rose-500 hover:bg-rose-600 text-rose-50",
   };

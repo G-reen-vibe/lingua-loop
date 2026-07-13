@@ -186,8 +186,10 @@ export function allFormatKinds(): FormatKind[] {
     "word-scramble",
     "fill-gap",
     "sentence-comprehension",
+    "sentence-translation",
     "shell-game",
-    "memory-grid",
+    "card-game",
+    "marble-game",
   ];
 }
 

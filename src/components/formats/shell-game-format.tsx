@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { ShellGameSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
 import { Shuffle } from "lucide-react";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
   spec: ShellGameSpec;
@@ -24,10 +25,11 @@ export function ShellGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
 
   // Phase 1: reveal items for 2.5s, then shuffle, then allow picking.
   useEffect(() => {
+    playSound("reveal");
     let interval: ReturnType<typeof setInterval> | null = null;
     const t1 = setTimeout(() => {
       setPhase("shuffle");
-      // Animate shuffle: multiple position swaps over ~1s
+      playSound("shuffle");
       let swaps = 0;
       const maxSwaps = 8;
       interval = setInterval(() => {
@@ -56,13 +58,9 @@ export function ShellGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
     if (disabled || phase !== "pick" || pickedShell !== null) return;
     setPickedShell(shellIdx);
     setPhase("result");
-    // The correctShell is the index in the ORIGINAL order.
-    // After shuffling, the item at position `shellIdx` is shuffledOrder[shellIdx].
-    // So the user picked the shell at position `shellIdx`, which contains item
-    // spec.shellItems[shuffledOrder[shellIdx]].
-    // The correct shell is the one whose shuffledOrder value === spec.correctShell.
     const correctPosition = shuffledOrder.indexOf(spec.correctShell);
     const correct = shellIdx === correctPosition;
+    playSound(correct ? "correct" : "incorrect");
     onAnswer(correct, correct ? undefined : `Correct shell was #${correctPosition + 1}`);
   };
 
@@ -81,7 +79,7 @@ export function ShellGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
               </span>
             )}
             {(phase === "pick" || phase === "result") && (
-              <>Find: <span className="font-bold text-emerald-600">{spec.prompt}</span></>
+              <>Find: <span className="font-bold theme-text">{spec.prompt}</span></>
             )}
           </div>
         </div>
@@ -105,11 +103,12 @@ export function ShellGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
                   isPicked && !isCorrect
                     ? "border-rose-500 bg-rose-50 dark:bg-rose-900/20"
                     : isCorrect
-                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
+                    ? "theme-border theme-bg-light"
                     : phase === "pick"
                     ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:border-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/30 cursor-pointer"
                     : "border-border bg-muted/30"
                 }`}
+                style={isCorrect ? { borderColor: "var(--theme-primary)" } : {}}
               >
                 {isRevealed ? (
                   <span className="text-sm font-medium text-center break-words">{item}</span>

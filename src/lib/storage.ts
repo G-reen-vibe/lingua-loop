@@ -1,4 +1,4 @@
-import { Lesson, UserData, WordProgress, Word } from "./types";
+import { Lesson, UserData, WordProgress, Word, UserPreferences, DEFAULT_PREFERENCES } from "./types";
 
 const STORAGE_KEY = "lingua-loop-data-v1";
 
@@ -62,12 +62,13 @@ export function createLesson(name: string, words: Word[]): Lesson {
 }
 
 export function loadUserData(): UserData {
-  if (typeof window === "undefined") return { version: "1", lessons: [] };
+  if (typeof window === "undefined") return { version: "1", lessons: [], preferences: DEFAULT_PREFERENCES };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { version: "1", lessons: [] };
+    if (!raw) return { version: "1", lessons: [], preferences: DEFAULT_PREFERENCES };
     const data = JSON.parse(raw) as UserData;
     if (!data.lessons) data.lessons = [];
+    if (!data.preferences) data.preferences = { ...DEFAULT_PREFERENCES };
     // Migrate: ensure each lesson has required fields
     for (const lesson of data.lessons) {
       if (!lesson.settings) {
@@ -87,7 +88,7 @@ export function loadUserData(): UserData {
     }
     return data;
   } catch {
-    return { version: "1", lessons: [] };
+    return { version: "1", lessons: [], preferences: DEFAULT_PREFERENCES };
   }
 }
 
@@ -109,6 +110,7 @@ export function exportUserData(): string {
 export function importUserData(json: string): UserData {
   const parsed = JSON.parse(json) as UserData;
   if (!parsed.lessons) throw new Error("Invalid user data: missing lessons");
+  if (!parsed.preferences) parsed.preferences = { ...DEFAULT_PREFERENCES };
   // Validate & migrate
   for (const lesson of parsed.lessons) {
     if (!lesson.words || !Array.isArray(lesson.words))

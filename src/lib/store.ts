@@ -8,6 +8,8 @@ import {
   StudyMode,
   FormatKind,
   ReviewRecord,
+  UserPreferences,
+  ThemeName,
 } from "./types";
 import {
   loadUserData,
@@ -48,6 +50,7 @@ interface AppState {
   updateLessonSettings: (id: string, settings: Partial<Lesson["settings"]>) => void;
   exportData: () => string;
   importData: (json: string) => void;
+  updatePreferences: (prefs: Partial<UserPreferences>) => void;
   startSession: (lessonId: string, mode: StudyMode) => void;
   endSession: () => void;
   recordAnswer: (
@@ -135,6 +138,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   importData: (json) => {
     const data = importUserDataFn(json);
     set({ data, view: { kind: "home" } });
+  },
+
+  updatePreferences: (prefs) => {
+    const data = { ...get().data, preferences: { ...get().data.preferences, ...prefs } };
+    persist(data);
+    set({ data });
   },
 
   startSession: (lessonId, mode) => {

@@ -5,6 +5,7 @@ import { WordScrambleSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Eraser, Check } from "lucide-react";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
   spec: WordScrambleSpec;
@@ -58,6 +59,7 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
     if (disabled || usedPieces.has(pieceIdx)) return;
     const emptyIdx = slots.findIndex((s, i) => s === null && !spec.preFilled.includes(i));
     if (emptyIdx === -1) return;
+    playSound("click");
     const newSlots = [...slots];
     newSlots[emptyIdx] = spec.pieces[pieceIdx];
     setSlots(newSlots);
@@ -66,6 +68,7 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
 
   const handleSlotClick = (slotIdx: number) => {
     if (disabled || spec.preFilled.includes(slotIdx) || slots[slotIdx] === null) return;
+    playSound("click");
     const newSlots = [...slots];
     newSlots[slotIdx] = null;
     setSlots(newSlots);
@@ -74,6 +77,7 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
 
   const handleClear = () => {
     if (disabled) return;
+    playSound("click");
     const cleared = elements.map((_, i) => (spec.preFilled.includes(i) ? elements[i] : null));
     setSlots(cleared);
     setUsedPieces(computeUsedPieces(spec, elements, cleared));
@@ -85,6 +89,7 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
     if (!isComplete || disabled) return;
     const userAnswer = slots.join(spec.isCharMode ? "" : " ");
     const correct = userAnswer === spec.answer;
+    playSound(correct ? "correct" : "incorrect");
     onAnswer(correct, correct ? undefined : `Correct: ${spec.answer}`);
   };
 
@@ -112,9 +117,10 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
                   isPreFilled
                     ? "border-muted bg-muted/50 text-muted-foreground"
                     : slot
-                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 hover:border-rose-400"
+                    ? "theme-border theme-bg-light hover:border-rose-400"
                     : "border-dashed border-muted-foreground/30"
                 }`}
+                style={slot && !isPreFilled ? { borderColor: "var(--theme-primary)" } : {}}
               >
                 {slot || (spec.isCharMode ? "·" : "—")}
               </button>
@@ -134,8 +140,9 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
                 className={`min-w-[2rem] h-10 px-1 rounded border-2 flex items-center justify-center font-medium text-sm transition-colors ${
                   isUsed
                     ? "border-muted bg-muted/30 opacity-30"
-                    : "border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:border-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
+                    : "theme-border theme-bg-light hover:opacity-80"
                 }`}
+                style={!isUsed ? { borderColor: "var(--theme-primary)" } : {}}
               >
                 {piece}
               </button>
@@ -150,7 +157,7 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
           <Button
             onClick={handleSubmit}
             disabled={disabled || !isComplete}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-600"
+            className="flex-1 theme-primary theme-primary-hover text-white"
           >
             <Check className="w-4 h-4 mr-1" /> Submit
           </Button>

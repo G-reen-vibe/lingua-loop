@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Heart, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { sessionGoal, sessionLives } from "@/lib/mastery";
+import { playSound } from "@/lib/sounds";
 import { IntroductionFormat } from "./formats/introduction-format";
 import { PickAnswerFormat } from "./formats/pick-answer-format";
 import { SpotLieFormat } from "./formats/spot-lie-format";
@@ -16,8 +17,10 @@ import { MatchPairsFormat } from "./formats/match-pairs-format";
 import { WordScrambleFormat } from "./formats/word-scramble-format";
 import { FillGapFormat } from "./formats/fill-gap-format";
 import { SentenceComprehensionFormat } from "./formats/sentence-comprehension-format";
+import { SentenceTranslationFormat } from "./formats/sentence-translation-format";
 import { ShellGameFormat } from "./formats/shell-game-format";
-import { MemoryGridFormat } from "./formats/memory-grid-format";
+import { CardGameFormat } from "./formats/card-game-format";
+import { MarbleGameFormat } from "./formats/marble-game-format";
 import {
   QuestionSpec,
   genIntroduction,
@@ -27,8 +30,10 @@ import {
   genWordScramble,
   genFillGap,
   genSentenceComprehension,
+  genSentenceTranslation,
   genShellGame,
-  genMemoryGrid,
+  genCardGame,
+  genMarbleGame,
 } from "@/lib/formats";
 import { wordsEligibleForFormat, allFormatKinds } from "@/lib/mastery";
 import { FORMAT_DIFFICULTY, WordProgress } from "@/lib/types";
@@ -63,10 +68,14 @@ function tryGenerate(
       return genFillGap(lesson, word, mastery);
     case "sentence-comprehension":
       return genSentenceComprehension(lesson, word, mastery);
+    case "sentence-translation":
+      return genSentenceTranslation(lesson, word, mastery);
     case "shell-game":
       return genShellGame(lesson, word, mastery);
-    case "memory-grid":
-      return genMemoryGrid(lesson, word, mastery);
+    case "card-game":
+      return genCardGame(lesson, word, mastery);
+    case "marble-game":
+      return genMarbleGame(lesson, word, mastery);
     case "match-pairs":
       return null; // handled separately (needs multiple words)
   }
@@ -124,12 +133,14 @@ function buildActiveFormat(
     for (const wp of shuffled.slice(0, 5)) {
       const spec = tryGenerate(lesson, format, wp);
       if (spec) {
+        // Shell game, card game, and marble game serve multiple sub-questions per setup.
+        const multiSub = format === "shell-game" || format === "card-game" || format === "marble-game";
         return {
           kind: format,
           spec,
           wordIndex: wp.wordIndex,
           subQuestionIndex: 0,
-          totalSubQuestions: format === "shell-game" ? 3 : 1,
+          totalSubQuestions: multiSub ? 3 : 1,
         };
       }
     }
@@ -203,16 +214,19 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
         setSessionDone(true);
         return;
       }
-      // Shell game: advance sub-question or move to next format
-      if (
+      // Multi-sub-question formats (shell-game, card-game, marble-game):
+      // advance to next sub-question with a new prompt, or move to next format.
+      const isMultiSub =
         currentActive &&
-        currentActive.kind === "shell-game" &&
-        currentActive.subQuestionIndex + 1 < currentActive.totalSubQuestions
-      ) {
+        (currentActive.kind === "shell-game" ||
+          currentActive.kind === "card-game" ||
+          currentActive.kind === "marble-game") &&
+        currentActive.subQuestionIndex + 1 < currentActive.totalSubQuestions;
+      if (isMultiSub && currentActive) {
         setActive({
           ...currentActive,
           subQuestionIndex: currentActive.subQuestionIndex + 1,
-          spec: regenerateShellPrompt(currentActive.spec),
+          spec: regenerateMultiSubPrompt(currentActive.spec),
         });
         return;
       }
@@ -275,7 +289,7 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
   const secs = timeLeft % 60;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950/20 dark:to-background">
+    <div className="min-h-screen flex flex-col theme-gradient">
       <header className="border-b bg-white/80 dark:bg-background/80 backdrop-blur sticky top-0 z-10">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <Button
@@ -316,7 +330,7 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
               </div>
             )}
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-emerald-600 flex items-center gap-1">
+              <span className="theme-text flex items-center gap-1">
                 <CheckCircle2 className="w-4 h-4" /> {sessionCorrect}
               </span>
               <span className="text-rose-600 flex items-center gap-1">
@@ -355,7 +369,7 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
             <div
               className={`mt-4 p-4 rounded-lg text-center font-medium ${
                 feedback.correct
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                  ? "theme-bg-light theme-text"
                   : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
               }`}
             >
@@ -396,29 +410,64 @@ function FormatRenderer({
       return <FillGapFormat spec={spec} onAnswer={onAnswer} disabled={disabled} feedback={feedback} />;
     case "sentence-comprehension":
       return <SentenceComprehensionFormat spec={spec} onAnswer={onAnswer} disabled={disabled} feedback={feedback} />;
+    case "sentence-translation":
+      return <SentenceTranslationFormat spec={spec} onAnswer={onAnswer} disabled={disabled} feedback={feedback} />;
     case "shell-game":
       return <ShellGameFormat spec={spec} onAnswer={onAnswer} disabled={disabled} feedback={feedback} />;
-    case "memory-grid":
-      return <MemoryGridFormat spec={spec} onAnswer={onAnswer} disabled={disabled} feedback={feedback} />;
+    case "card-game":
+      return <CardGameFormat spec={spec} onAnswer={onAnswer} disabled={disabled} feedback={feedback} />;
+    case "marble-game":
+      return <MarbleGameFormat spec={spec} onAnswer={onAnswer} disabled={disabled} feedback={feedback} />;
   }
 }
 
-// Regenerate the prompt for a shell game sub-question (same shells, new prompt).
-// Avoids repeating the same target as the previous sub-question.
-function regenerateShellPrompt(spec: Extract<QuestionSpec, { format: "shell-game" }>): typeof spec {
-  let newTarget = Math.floor(Math.random() * spec.shellItems.length);
-  if (spec.shellItems.length > 1) {
-    while (newTarget === spec.correctShell) {
-      newTarget = Math.floor(Math.random() * spec.shellItems.length);
+// Regenerate the prompt for a multi-sub-question format (shell/card/marble game).
+// Picks a new target index, different from the current one.
+function regenerateMultiSubPrompt(spec: QuestionSpec): QuestionSpec {
+  if (spec.format === "shell-game") {
+    let newTarget = Math.floor(Math.random() * spec.shellItems.length);
+    if (spec.shellItems.length > 1) {
+      while (newTarget === spec.correctShell) {
+        newTarget = Math.floor(Math.random() * spec.shellItems.length);
+      }
     }
+    return {
+      ...spec,
+      prompt: spec.shellItems[newTarget],
+      promptKey: spec.shellKeys[newTarget],
+      correctShell: newTarget,
+    };
   }
-  return {
-    ...spec,
-    prompt: spec.shellItems[newTarget],
-    promptKey: spec.shellKeys[newTarget],
-    correctShell: newTarget,
-    shuffleOrder: spec.shuffleOrder,
-  };
+  if (spec.format === "card-game") {
+    let newTarget = Math.floor(Math.random() * spec.cardItems.length);
+    if (spec.cardItems.length > 1) {
+      while (newTarget === spec.correctCard) {
+        newTarget = Math.floor(Math.random() * spec.cardItems.length);
+      }
+    }
+    return {
+      ...spec,
+      prompt: spec.cardItems[newTarget],
+      promptKey: spec.cardKeys[newTarget],
+      correctCard: newTarget,
+    };
+  }
+  if (spec.format === "marble-game") {
+    // For marble game, the marble lands in a random slot each time.
+    let newTarget = Math.floor(Math.random() * spec.slotItems.length);
+    if (spec.slotItems.length > 1) {
+      while (newTarget === spec.correctSlot) {
+        newTarget = Math.floor(Math.random() * spec.slotItems.length);
+      }
+    }
+    return {
+      ...spec,
+      prompt: spec.slotItems[newTarget],
+      promptKey: spec.slotKeys[newTarget],
+      correctSlot: newTarget,
+    };
+  }
+  return spec;
 }
 
 function SessionSummary({
@@ -435,12 +484,16 @@ function SessionSummary({
   onExit: () => void;
 }) {
   const accuracy = served > 0 ? (correct / served) * 100 : 0;
+  // Play completion sound on mount.
+  useEffect(() => {
+    playSound("complete");
+  }, []);
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950/20 dark:to-background p-4">
+    <div className="min-h-screen flex items-center justify-center theme-gradient p-4">
       <Card className="w-full max-w-md">
         <CardContent className="p-8 text-center space-y-6">
-          <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+          <div className="w-20 h-20 rounded-full theme-bg-light flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-10 h-10 theme-text" />
           </div>
           <div>
             <h2 className="text-2xl font-bold">Session Complete!</h2>
@@ -452,7 +505,7 @@ function SessionSummary({
               <div className="text-xs text-muted-foreground">Questions</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-emerald-600">{correct}</div>
+              <div className="text-2xl font-bold theme-text">{correct}</div>
               <div className="text-xs text-muted-foreground">Correct</div>
             </div>
             <div>
@@ -465,7 +518,7 @@ function SessionSummary({
             <Progress value={accuracy} className="h-3" />
             <div className="text-lg font-bold mt-1">{accuracy.toFixed(0)}%</div>
           </div>
-          <Button onClick={onExit} className="w-full bg-emerald-500 hover:bg-emerald-600">
+          <Button onClick={onExit} className="w-full theme-primary theme-primary-hover text-white">
             Back to Lesson
           </Button>
         </CardContent>

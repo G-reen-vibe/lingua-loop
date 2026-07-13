@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Check } from "lucide-react";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
   spec: FillGapSpec;
@@ -29,6 +30,7 @@ export function FillGapFormat({ spec, onAnswer, disabled, feedback }: Props) {
     e?.preventDefault();
     if (disabled || value.trim() === "") return;
     const correct = value.trim().toLowerCase() === spec.answer.trim().toLowerCase();
+    playSound(correct ? "correct" : "incorrect");
     onAnswer(correct, correct ? undefined : `Correct: ${spec.fullAnswer}`);
   };
 
@@ -52,7 +54,7 @@ export function FillGapFormat({ spec, onAnswer, disabled, feedback }: Props) {
               if (/^_+$/.test(seg)) {
                 // Render underscores as highlighted
                 return (
-                  <span key={i} className="text-emerald-600 font-bold tracking-wider">
+                  <span key={i} className="theme-text font-bold tracking-wider">
                     {seg.split("").map((_, j) => (
                       <span key={j}>_</span>
                     ))}
@@ -75,7 +77,7 @@ export function FillGapFormat({ spec, onAnswer, disabled, feedback }: Props) {
               onChange={(e) => setValue(e.target.value)}
               disabled={disabled}
               maxLength={underscoreCount}
-              className="w-48 h-12 text-center text-lg font-bold border-2 border-emerald-400 focus:border-emerald-600"
+              className="w-48 h-12 text-center text-lg font-bold border-2 theme-border"
               placeholder={"•".repeat(underscoreCount)}
               autoComplete="off"
               autoCorrect="off"
@@ -86,7 +88,7 @@ export function FillGapFormat({ spec, onAnswer, disabled, feedback }: Props) {
           <Button
             type="submit"
             disabled={disabled || value.trim() === ""}
-            className="w-full bg-emerald-500 hover:bg-emerald-600"
+            className="w-full theme-primary theme-primary-hover text-white"
             size="lg"
           >
             <Check className="w-4 h-4 mr-1" /> Submit

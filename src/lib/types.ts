@@ -109,7 +109,30 @@ export interface UserData {
   version: string;
   lessons: Lesson[];
   exportedAt?: number;
+  preferences?: UserPreferences;
 }
+
+// ===== User preferences =====
+
+export type ThemeName = "emerald" | "ocean" | "sunset" | "royal" | "slate";
+
+export interface UserPreferences {
+  theme: ThemeName;
+  soundEnabled: boolean;
+}
+
+export const DEFAULT_PREFERENCES: UserPreferences = {
+  theme: "emerald",
+  soundEnabled: true,
+};
+
+export const THEME_LABELS: Record<ThemeName, string> = {
+  emerald: "Emerald",
+  ocean: "Ocean",
+  sunset: "Sunset",
+  royal: "Royal",
+  slate: "Slate",
+};
 
 // ===== Study modes & formats =====
 
@@ -123,8 +146,10 @@ export type FormatKind =
   | "word-scramble"
   | "fill-gap"
   | "sentence-comprehension"
+  | "sentence-translation"
   | "shell-game"
-  | "memory-grid";
+  | "card-game"
+  | "marble-game";
 
 export const FORMAT_DIFFICULTY: Record<FormatKind, number> = {
   introduction: 0,
@@ -134,8 +159,10 @@ export const FORMAT_DIFFICULTY: Record<FormatKind, number> = {
   "word-scramble": 2,
   "fill-gap": 3,
   "sentence-comprehension": 3,
+  "sentence-translation": 3,
   "shell-game": 4,
-  "memory-grid": 4,
+  "card-game": 4,
+  "marble-game": 4,
 };
 
 // Mastery thresholds.

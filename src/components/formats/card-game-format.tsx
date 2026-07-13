@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { MemoryGridSpec } from "@/lib/formats";
+import { CardGameSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
-  spec: MemoryGridSpec;
+  spec: CardGameSpec;
   onAnswer: (correct: boolean, message?: string) => void;
   disabled: boolean;
   feedback: null | { correct: boolean; message?: string };
@@ -13,14 +14,16 @@ interface Props {
 
 type Phase = "memorize" | "hidden" | "result";
 
-export function MemoryGridFormat({ spec, onAnswer, disabled, feedback }: Props) {
-  // Initialize state from the spec; the parent remounts this component
-  // (via key) whenever a new spec arrives, so this initializer runs fresh.
+export function CardGameFormat({ spec, onAnswer, disabled, feedback }: Props) {
   const [phase, setPhase] = useState<Phase>("memorize");
   const [pickedCard, setPickedCard] = useState<number | null>(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setPhase("hidden"), 3500);
+    playSound("reveal");
+    const t = setTimeout(() => {
+      setPhase("hidden");
+      playSound("shuffle");
+    }, 3500);
     return () => clearTimeout(t);
   }, [spec]);
 
@@ -29,23 +32,24 @@ export function MemoryGridFormat({ spec, onAnswer, disabled, feedback }: Props) 
     setPickedCard(cardIdx);
     setPhase("result");
     const correct = cardIdx === spec.correctCard;
+    playSound(correct ? "correct" : "incorrect");
     onAnswer(correct, correct ? undefined : `Correct card was #${spec.correctCard + 1}`);
   };
 
   // Grid columns based on card count
-  const cols = spec.cardItems.length === 4 ? 2 : spec.cardItems.length === 6 ? 3 : 3;
+  const cols = spec.cardItems.length === 4 ? 2 : 3;
 
   return (
     <Card>
       <CardContent className="p-6 space-y-4">
         <div className="text-center">
           <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-            Memory Grid
+            Card Game
           </div>
           <div className="text-sm text-muted-foreground">
             {phase === "memorize" && "Memorize the cards..."}
             {(phase === "hidden" || phase === "result") && (
-              <>Find: <span className="font-bold text-emerald-600">{spec.prompt}</span></>
+              <>Find: <span className="font-bold theme-text">{spec.prompt}</span></>
             )}
           </div>
         </div>
@@ -67,7 +71,7 @@ export function MemoryGridFormat({ spec, onAnswer, disabled, feedback }: Props) 
                   isPicked && !isCorrect
                     ? "border-rose-500 bg-rose-50 dark:bg-rose-900/20"
                     : isCorrect
-                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
+                    ? "theme-border theme-bg-light"
                     : phase === "hidden"
                     ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:border-amber-600 cursor-pointer"
                     : "border-border bg-muted/30"

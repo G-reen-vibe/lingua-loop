@@ -4,6 +4,7 @@ import { IntroductionSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cleanSynonym } from "@/lib/mastery";
+import { playSound } from "@/lib/sounds";
 
 interface Props {
   spec: IntroductionSpec;
@@ -15,12 +16,17 @@ export function IntroductionFormat({ spec, onAnswer, disabled }: Props) {
   const { word } = spec;
   const synonym = cleanSynonym(word.synonym);
 
+  const handleGotIt = () => {
+    playSound("reveal");
+    onAnswer(true);
+  };
+
   return (
     <Card>
       <CardContent className="p-6 space-y-4">
         <div className="text-center">
           <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">New Word</div>
-          <div className="text-4xl font-bold text-emerald-600">{word.word}</div>
+          <div className="text-4xl font-bold theme-text">{word.word}</div>
           <div className="text-lg text-muted-foreground mt-1">{word.translation}</div>
         </div>
 
@@ -65,9 +71,9 @@ export function IntroductionFormat({ spec, onAnswer, disabled }: Props) {
         )}
 
         <Button
-          onClick={() => onAnswer(true)}
+          onClick={handleGotIt}
           disabled={disabled}
-          className="w-full bg-emerald-500 hover:bg-emerald-600"
+          className="w-full theme-primary theme-primary-hover text-white"
           size="lg"
         >
           Got it
