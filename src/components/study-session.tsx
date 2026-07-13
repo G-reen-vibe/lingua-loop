@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAppStore } from "@/lib/store";
 import { StudyMode, FormatKind, Lesson } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -214,6 +214,13 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
     return buildActiveFormat(lesson, lessonId, pickSessionFormat, sessionRecentFormats);
   }, [lesson, lessonId, pickSessionFormat, sessionRecentFormats]);
 
+  // Keep a ref to the latest buildNext so setTimeout callbacks always use
+  // the current version (avoids stale closure after store updates).
+  const buildNextRef = useRef(buildNext);
+  useEffect(() => {
+    buildNextRef.current = buildNext;
+  }, [buildNext]);
+
   const advance = useCallback(
     (currentActive: ActiveFormat | null, resultDone: boolean) => {
       if (resultDone) {
@@ -233,14 +240,15 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
         });
         return;
       }
-      const next = buildNext();
+      // Use the ref to always get the latest buildNext.
+      const next = buildNextRef.current();
       if (!next) {
         setSessionDone(true);
       } else {
         setActive(next);
       }
     },
-    [buildNext]
+    []
   );
 
   const handleAnswer = useCallback(
