@@ -1,31 +1,23 @@
-'use client'
+"use client";
+
+import { useEffect } from "react";
+import { useAppStore } from "@/lib/store";
+import { HomePage } from "@/components/home-page";
+import { LessonDetail } from "@/components/lesson-detail";
+import { StudySession } from "@/components/study-session";
 
 export default function Home() {
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      gap: '2rem',
-      padding: '1rem'
-    }}>
-      <div style={{
-        position: 'relative',
-        width: '6rem',
-        height: '6rem'
-      }}>
-        <img
-          src="/logo.svg"
-          alt="Z.ai Logo"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain'
-          }}
-        />
-      </div>
-    </div>
-  )
+  const init = useAppStore((s) => s.init);
+  const view = useAppStore((s) => s.view);
+
+  useEffect(() => {
+    init();
+  }, [init]);
+
+  if (view.kind === "home") return <HomePage />;
+  if (view.kind === "lesson") return <LessonDetail lessonId={view.lessonId} />;
+  if (view.kind === "study")
+    return <StudySession lessonId={view.lessonId} mode={view.mode} />;
+
+  return <HomePage />;
 }
