@@ -19,9 +19,11 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { BookOpen, Upload, Download, Plus, Clock, CheckCircle2, Layers, Palette, Volume2 } from "lucide-react";
+import { BookOpen, Upload, Download, Plus, Clock, CheckCircle2, Layers, Palette, Volume2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { playSound, setSoundEnabled } from "@/lib/sounds";
+import { getThemeSwatchColor } from "@/lib/themes";
+import { SAMPLE_LESSON } from "@/lib/sample-lesson";
 
 export function HomePage() {
   const data = useAppStore((s) => s.data);
@@ -72,6 +74,12 @@ export function HomePage() {
       playSound("incorrect");
       toast.error("Failed to create lesson: " + (e as Error).message);
     }
+  };
+
+  const handleLoadSample = () => {
+    addLesson(SAMPLE_LESSON.name, SAMPLE_LESSON.words);
+    playSound("correct");
+    toast.success("Sample lesson loaded!");
   };
 
   const handleExport = () => {
@@ -137,6 +145,9 @@ export function HomePage() {
             <Button variant="outline" size="sm" onClick={() => { playSound("click"); setPrefsOpen(true); }}>
               <Palette className="w-4 h-4 mr-1" /> Theme
             </Button>
+            <Button variant="outline" size="sm" onClick={handleLoadSample}>
+              <Sparkles className="w-4 h-4 mr-1" /> Sample
+            </Button>
             <Button variant="outline" size="sm" onClick={() => { playSound("click"); setImportOpen(true); }}>
               <Upload className="w-4 h-4 mr-1" /> Import
             </Button>
@@ -170,9 +181,14 @@ export function HomePage() {
               <p className="text-muted-foreground mb-4 max-w-md">
                 Create your first lesson by pasting JSON or uploading a file. Each lesson is a list of words with definitions, translations, and example sentences.
               </p>
-              <Button onClick={() => { playSound("click"); setCreateOpen(true); }} className="theme-primary theme-primary-hover text-white">
-                <Plus className="w-4 h-4 mr-1" /> Create Lesson
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => { playSound("click"); setCreateOpen(true); }} className="theme-primary theme-primary-hover text-white">
+                  <Plus className="w-4 h-4 mr-1" /> Create Lesson
+                </Button>
+                <Button variant="outline" onClick={handleLoadSample}>
+                  <Sparkles className="w-4 h-4 mr-1" /> Load Sample
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : (
@@ -296,8 +312,8 @@ export function HomePage() {
                   <button
                     key={t}
                     onClick={() => { updatePreferences({ theme: t }); playSound("click"); }}
-                    className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${preferences.theme === t ? "ring-2 ring-offset-2" : ""}`}
-                    style={{ backgroundColor: getThemeColor(t) }}
+                    className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${preferences.theme === t ? "ring-2 ring-offset-2 ring-offset-background" : ""}`}
+                    style={{ backgroundColor: getThemeSwatchColor(t), borderColor: preferences.theme === t ? "var(--foreground)" : "transparent" }}
                     title={THEME_LABELS[t]}
                   />
                 ))}
@@ -329,17 +345,6 @@ export function HomePage() {
 }
 
 // Helper to get the primary color for a theme (for swatches).
-function getThemeColor(theme: ThemeName): string {
-  const colors: Record<ThemeName, string> = {
-    emerald: "#10b981",
-    ocean: "#0891b2",
-    sunset: "#f97316",
-    royal: "#a855f7",
-    slate: "#475569",
-  };
-  return colors[theme];
-}
-
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
     <Card>

@@ -14,6 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ArrowLeft, Zap, Flame, Target, RotateCcw, Trash2, Settings2, BookOpen, Clock, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { dueWords, wordsForIntroduction } from "@/lib/mastery";
+import { DebugGameTester } from "./debug-game-tester";
 
 export function LessonDetail({ lessonId }: { lessonId: string }) {
   const data = useAppStore((s) => s.data);
@@ -304,6 +305,9 @@ export function LessonDetail({ lessonId }: { lessonId: string }) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Debug game tester */}
+        <DebugGameTester lesson={lesson} />
       </main>
     </div>
   );
