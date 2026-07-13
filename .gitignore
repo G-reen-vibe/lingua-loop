@@ -56,3 +56,4 @@ skills/
 tool-results/
 .zscripts/
 dev.log
+download/*.png
