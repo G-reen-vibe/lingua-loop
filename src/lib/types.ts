@@ -43,17 +43,6 @@ export const ALL_ASPECT_KEYS: AspectKey[] = [
 // of certain matching/pair formats because they wouldn't fit on screen.
 export const LONG_ASPECT_KEYS: AspectKey[] = ["definition", "explanation"];
 
-// Aspects that the user can be expected to type on a qwerty keyboard.
-// We treat the long-form aspects as not typeable (too long, often unicode).
-export const TYPEABLE_ASPECT_KEYS: AspectKey[] = [
-  "word",
-  "synonym",
-  "translation",
-  "alt1",
-  "alt2",
-  "alt3",
-];
-
 // ===== Review / progress types =====
 
 export interface ReviewRecord {
@@ -137,11 +126,6 @@ export type FormatKind =
   | "shell-game"
   | "memory-grid";
 
-export interface FormatDifficulty {
-  kind: FormatKind;
-  difficulty: number;
-}
-
 export const FORMAT_DIFFICULTY: Record<FormatKind, number> = {
   introduction: 0,
   "pick-answer": 1,
@@ -152,18 +136,6 @@ export const FORMAT_DIFFICULTY: Record<FormatKind, number> = {
   "sentence-comprehension": 3,
   "shell-game": 4,
   "memory-grid": 4,
-};
-
-export const FORMAT_LABELS: Record<FormatKind, string> = {
-  introduction: "Introduction",
-  "pick-answer": "Pick the Answer",
-  "spot-lie": "Spot the Lie",
-  "match-pairs": "Match Pairs",
-  "word-scramble": "Word Scramble",
-  "fill-gap": "Fill the Gap",
-  "sentence-comprehension": "Sentence Comprehension",
-  "shell-game": "Shell Game",
-  "memory-grid": "Memory Grid",
 };
 
 // Mastery thresholds.

@@ -1,10 +1,5 @@
-import {
-  Word,
-  AspectKey,
-  FormatKind,
-  Lesson,
-  WordProgress,
-} from "./types";
+import { Word, AspectKey, Lesson } from "./types";
+import { LONG_ASPECT_KEYS } from "./types";
 import {
   getAspect,
   cleanSynonym,
@@ -81,7 +76,7 @@ export function generateDistractors(
       if (v && v.trim() && v !== correctValue) pool.push(v);
     } else {
       for (const a of availableAspects(w)) {
-        if (a.value !== correctValue && !LONG_ASPECT_KEYS_DUMMY.includes(a.key)) {
+        if (a.value !== correctValue && !LONG_ASPECT_KEYS.includes(a.key)) {
           pool.push(a.value);
         }
       }
@@ -91,8 +86,6 @@ export function generateDistractors(
   const unique = Array.from(new Set(pool));
   return sample(unique, count, rng);
 }
-
-const LONG_ASPECT_KEYS_DUMMY: AspectKey[] = ["definition", "explanation"];
 
 // ===== Per-format question generation =====
 
@@ -433,10 +426,7 @@ export function genWordScramble(
 ): WordScrambleSpec | null {
   // Pick prompt & answer aspects. Answer must not be definition/explanation.
   // Prompt can be any aspect (including def/explanation).
-  const pair = pickTwoAspects(word, {
-    excludeKeys: [],
-    rng,
-  });
+  const pair = pickTwoAspects(word, { rng });
   if (!pair) return null;
 
   // Decide which is prompt and which is answer.
@@ -742,53 +732,20 @@ export function genShellGame(
 
   // Use as many shells as we have unique items, capped at N.
   const shellCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
-  const actualN = shellCandidates.length;
-
-  // The prompt is an aspect that corresponds to ONE of the shell items.
-  // Pick one shell item as the "target", then find an aspect of the same word
-  // that matches it but is shown as the prompt.
-  // Actually: "the user is then randomly shown an aspect corresponding to a shell item,
-  // this can be any aspect including the same one in the shell".
-  // So the prompt is just any aspect of the target word that "corresponds to" a shell item.
-  // For simplicity: the prompt is the translation or definition of the word whose
-  // form is under the target shell. But all shells are from the same word here.
-  // So the prompt is a DIFFERENT aspect of the same word that maps to the target shell.
-
-  // Pick a target shell.
-  const targetIdx = Math.floor(rng() * actualN);
+  // Pick a target shell — the prompt is the target shell item's own value.
+  // The challenge is remembering positions after shuffling, not aspect mapping.
+  const targetIdx = Math.floor(rng() * shellCandidates.length);
   const targetShell = shellCandidates[targetIdx];
-
-  // Pick a prompt aspect: any aspect of `word` that is unique enough to identify
-  // the target shell. Since all shells are aspects of the same word, the prompt
-  // must EQUAL one of the shell item values to be unambiguous... but then the answer
-  // is just "find the shell with this value". That's fine — the challenge is
-  // remembering positions after shuffling.
-  // The spec says "any aspect including the same one in the shell" — so yes,
-  // the prompt can just be the value of the target shell item.
-  // To make it slightly harder, pick a DIFFERENT aspect that still maps to the same shell.
-  // But since shells are aspect values, and the prompt is an aspect value, the only
-  // way to "correspond" is to be the same value OR a value that uniquely identifies
-  // the word (and thus the shell). Since all shells are from the same word, ANY aspect
-  // value would be ambiguous. So the prompt MUST be the shell item's own value.
-  // Conclusion: prompt = target shell item's value. This is a memory/attention game.
-
-  const prompt = targetShell.value;
-  const promptKey = targetShell.key;
-  const correctShell = targetIdx;
-
-  // Shuffle order: identity for now; the UI will animate the shuffle.
-  // We provide the initial order (0..N-1) and the final shuffled order.
-  const initial = shellCandidates.map((_, i) => i);
-  const shuffleOrder = shuffle(initial, rng);
 
   return {
     format: "shell-game",
     shellItems: shellCandidates.map((s) => s.value),
     shellKeys: shellCandidates.map((s) => s.key),
-    prompt,
-    promptKey,
-    correctShell,
-    shuffleOrder,
+    prompt: targetShell.value,
+    promptKey: targetShell.key,
+    correctShell: targetIdx,
+    // shuffleOrder is provided for reference; the UI does its own shuffle animation.
+    shuffleOrder: shuffle(shellCandidates.map((_, i) => i), rng),
   };
 }
 
@@ -834,9 +791,8 @@ export function genMemoryGrid(
   if (uniqueArr.length < 2) return null;
 
   const cardCandidates = sample(uniqueArr, Math.min(N, uniqueArr.length), rng);
-  const actualN = cardCandidates.length;
 
-  const targetIdx = Math.floor(rng() * actualN);
+  const targetIdx = Math.floor(rng() * cardCandidates.length);
   const targetCard = cardCandidates[targetIdx];
 
   return {

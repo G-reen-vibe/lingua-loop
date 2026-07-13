@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { StudyMode, FORMAT_LABELS, FORMAT_DIFFICULTY, FormatKind } from "@/lib/types";
+import { StudyMode } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Play, Zap, Flame, Target, RotateCcw, Trash2, Settings2, BookOpen, Clock, Trophy } from "lucide-react";
+import { ArrowLeft, Zap, Flame, Target, RotateCcw, Trash2, Settings2, BookOpen, Clock, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { dueWords, wordsForIntroduction } from "@/lib/mastery";
 
@@ -175,7 +175,7 @@ export function LessonDetail({ lessonId }: { lessonId: string }) {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  SM-2 is the classic algorithm. FSRS-5 is a newer model that predicts memory stability more accurately.
+                  SM-2 is the classic algorithm. FSRS is a newer model that predicts memory stability more accurately.
                 </p>
               </div>
 

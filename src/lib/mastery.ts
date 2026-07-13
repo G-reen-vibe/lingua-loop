@@ -7,12 +7,14 @@ import {
   MAX_MASTERY,
   StudyMode,
   AlgorithmKind,
+  Word,
+  AspectKey,
+  ALL_ASPECT_KEYS,
+  LONG_ASPECT_KEYS,
 } from "./types";
 import { sm2IsDue, fsrsIsDue } from "./algorithms";
 
 // ===== Aspect helpers =====
-
-import { Word, AspectKey, ALL_ASPECT_KEYS, LONG_ASPECT_KEYS } from "./types";
 
 export function getAspect(word: Word, key: AspectKey): string | undefined {
   switch (key) {
@@ -80,10 +82,6 @@ export function recordReview(
 
   const formatDiff = FORMAT_DIFFICULTY[format];
 
-  // Only update mastery/streak when reviewing at the current level.
-  // Mastery = highest difficulty level the user can handle + 1.
-  // Format difficulty D can be served when mastery >= D.
-  // So if format diff == mastery, advancing is possible.
   if (correct) {
     // Introduction always moves mastery 0 -> 1
     if (format === "introduction" && next.mastery === 0) {
@@ -121,31 +119,23 @@ export function isWordDue(
   return fsrsIsDue(progress.fsrs, now);
 }
 
-// Words eligible for introduction: never seen, and the daily new-word budget allows.
-// Pure function: does NOT mutate the lesson. Returns the count of new words
-// seen today, resetting if the date has changed.
+// Pure function: returns the count of new words seen today (resets on date change).
 export function getNewWordsSeenToday(lesson: Lesson): number {
   if (lesson.newWordsDate !== todayStrLocal()) {
-    return 0; // date changed, budget resets
+    return 0;
   }
   return lesson.newWordsSeenToday;
 }
 
-export function wordsForIntroduction(
-  lesson: Lesson
-): WordProgress[] {
-  // Read-only: do not mutate lesson here. The store handles mutations.
+export function wordsForIntroduction(lesson: Lesson): WordProgress[] {
   const seenToday = getNewWordsSeenToday(lesson);
   const budget = lesson.settings.maxNewWordsDaily - seenToday;
   if (budget <= 0) return [];
   const neverSeen = lesson.progress.filter((p) => !p.seen);
-  // Also require that existing words meet the min-mastery threshold before
-  // introducing new ones.
   if (lesson.settings.minMasteryForNewWords > 0) {
     const seen = lesson.progress.filter((p) => p.seen);
     if (seen.length > 0) {
-      const avgMastery =
-        seen.reduce((s, p) => s + p.mastery, 0) / seen.length;
+      const avgMastery = seen.reduce((s, p) => s + p.mastery, 0) / seen.length;
       if (avgMastery < lesson.settings.minMasteryForNewWords) {
         return [];
       }
@@ -172,37 +162,20 @@ export function dueWords(
 }
 
 // Returns words eligible for a given format based on mastery.
-// NOTE: We do NOT check isWordDue here. Within a study session, any seen word
-// whose mastery matches the format's difficulty is eligible. The algorithm's
-// due date is used for cross-session scheduling (which words to prioritize at
-// the start of a session), not for excluding words mid-session.
+// Within a study session, any seen word whose mastery >= format's difficulty
+// is eligible. The algorithm's due date is for cross-session scheduling only.
 export function wordsEligibleForFormat(
   lesson: Lesson,
-  format: FormatKind,
-  now: number = Date.now()
+  format: FormatKind
 ): WordProgress[] {
   const diff = FORMAT_DIFFICULTY[format];
   if (format === "introduction") {
     return wordsForIntroduction(lesson);
   }
-  // Format difficulty D requires word mastery >= D.
-  return lesson.progress.filter(
-    (p) =>
-      p.seen &&
-      p.mastery >= diff
-  );
+  return lesson.progress.filter((p) => p.seen && p.mastery >= diff);
 }
 
 // ===== Format selection =====
-
-// All formats by difficulty.
-const FORMATS_BY_DIFFICULTY: Record<number, FormatKind[]> = {
-  0: ["introduction"],
-  1: ["pick-answer", "spot-lie"],
-  2: ["match-pairs", "word-scramble"],
-  3: ["fill-gap", "sentence-comprehension"],
-  4: ["shell-game", "memory-grid"],
-};
 
 export function allFormatKinds(): FormatKind[] {
   return [
@@ -219,20 +192,11 @@ export function allFormatKinds(): FormatKind[] {
 }
 
 // Picks the next format to serve. Returns null if no format is available.
-// Strategy:
-//  - If there are never-seen words available (within daily budget), serve Introduction first.
-//  - Otherwise, prefer formats at the user's current mastery frontier.
-//  - Then fall back to lower-difficulty formats if no frontier format is available.
 export function pickNextFormat(
   lesson: Lesson,
-  recentFormats: FormatKind[],
-  now: number = Date.now()
+  recentFormats: FormatKind[]
 ): FormatKind | null {
-  const alg = lesson.settings.algorithm;
-
-  // 1. Introduction — serve for never-seen words. We avoid serving introduction
-  //    twice in a row (to mix in practice), but we DO allow multiple introductions
-  //    in a session for different words.
+  // 1. Introduction — serve for never-seen words, but not twice in a row.
   const introWords = wordsForIntroduction(lesson);
   const lastFormat = recentFormats[recentFormats.length - 1];
   if (introWords.length > 0 && lastFormat !== "introduction") {
@@ -243,56 +207,41 @@ export function pickNextFormat(
   const eligible: FormatKind[] = [];
   for (const format of allFormatKinds()) {
     if (format === "introduction") continue;
-    const words = wordsEligibleForFormat(lesson, format, now);
+    const words = wordsEligibleForFormat(lesson, format);
     if (words.length > 0) eligible.push(format);
   }
 
-  if (eligible.length === 0) {
-    // No due words at any difficulty — fall back to any seen word at the
-    // lowest difficulty if possible (so the session isn't stuck).
-    return null;
-  }
+  if (eligible.length === 0) return null;
 
-  // 3. Prefer formats we haven't served recently (variety).
-  // Compute a score: prefer higher difficulty, then less recently used.
+  // 3. Score & sort.
   const diffOf = (f: FormatKind) => FORMAT_DIFFICULTY[f];
   const recentIdx = (f: FormatKind) => {
     const i = recentFormats.lastIndexOf(f);
     return i === -1 ? Infinity : recentFormats.length - i;
   };
 
-  // Prefer formats closer to the user's average mastery (frontier),
-  // and avoid repeating the most recent format.
   const seenProgress = lesson.progress.filter((p) => p.seen);
   const avgMastery =
     seenProgress.length > 0
       ? seenProgress.reduce((s, p) => s + p.mastery, 0) / seenProgress.length
       : 0;
-
   const targetDiff = Math.max(1, Math.min(4, Math.round(avgMastery)));
 
-  // Match-pairs is "served once" per setup — don't serve it twice in a row.
-  // Also avoid serving it too frequently (at most once every 5 questions).
-  const matchPairsCount = recentFormats.filter((f) => f === "match-pairs").length;
-  const lastFmt = recentFormats[recentFormats.length - 1];
+  // Match-pairs: don't serve twice in a row, and cool down for 5 questions.
   const filteredEligible = eligible.filter((f) => {
-    if (f === "match-pairs") {
-      // Don't serve if last format was match-pairs.
-      if (lastFmt === "match-pairs") return false;
-      // Don't serve if we've already had match-pairs recently (within last 5).
-      if (matchPairsCount > 0 && recentFormats.length - recentFormats.lastIndexOf("match-pairs") < 5) {
-        return false;
-      }
-    }
+    if (f !== "match-pairs") return true;
+    if (lastFormat === "match-pairs") return false;
+    const lastMP = recentFormats.lastIndexOf("match-pairs");
+    if (lastMP !== -1 && recentFormats.length - lastMP < 5) return false;
     return true;
   });
 
   const pool = filteredEligible.length > 0 ? filteredEligible : eligible;
 
   pool.sort((a, b) => {
-    // Avoid repeating the most recent format at all costs.
-    const aRecent = recentFormats[recentFormats.length - 1] === a ? 1 : 0;
-    const bRecent = recentFormats[recentFormats.length - 1] === b ? 1 : 0;
+    // Avoid repeating the most recent format.
+    const aRecent = lastFormat === a ? 1 : 0;
+    const bRecent = lastFormat === b ? 1 : 0;
     if (aRecent !== bRecent) return aRecent - bRecent;
     // Prefer formats closer to target difficulty.
     const aDist = Math.abs(diffOf(a) - targetDiff);
@@ -316,10 +265,6 @@ export function sessionGoal(mode: StudyMode): number {
     case "rush":
       return 999; // rush is timed; effectively unlimited questions
   }
-}
-
-export function sessionTimeLimitMs(mode: StudyMode): number {
-  return mode === "rush" ? 5 * 60 * 1000 : 0;
 }
 
 export function sessionLives(mode: StudyMode): number {

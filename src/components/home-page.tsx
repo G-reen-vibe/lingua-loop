@@ -11,14 +11,13 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { BookOpen, Upload, Download, Trash2, Plus, Clock, CheckCircle2, Layers } from "lucide-react";
+import { BookOpen, Upload, Download, Plus, Clock, CheckCircle2, Layers } from "lucide-react";
 import { toast } from "sonner";
 
 export function HomePage() {

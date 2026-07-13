@@ -13,89 +13,70 @@ interface Props {
   feedback: null | { correct: boolean; message?: string };
 }
 
+// Helper: compute which piece indices are consumed by the given slot values
+// (plus pre-filled slots).
+function computeUsedPieces(
+  spec: WordScrambleSpec,
+  elements: string[],
+  slots: (string | null)[]
+): Set<number> {
+  const used = new Set<number>();
+  const available = spec.pieces.map((p, i) => ({ p, i }));
+
+  // First, mark pieces consumed by pre-filled slots.
+  for (const idx of spec.preFilled) {
+    const target = elements[idx];
+    const found = available.find((a) => !used.has(a.i) && a.p === target);
+    if (found) used.add(found.i);
+  }
+
+  // Then, mark pieces consumed by user-filled slots.
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i] === null || spec.preFilled.includes(i)) continue;
+    const found = available.find((a) => !used.has(a.i) && a.p === slots[i]);
+    if (found) used.add(found.i);
+  }
+
+  return used;
+}
+
 export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props) {
-  // For char mode: answer is split into chars.
-  // For word mode: answer is split into words.
   const elements = useMemo(() => {
     return spec.isCharMode
       ? spec.answer.split("")
       : spec.answer.split(" ").filter((w) => w.length > 0);
   }, [spec]);
 
-  // Slots: what the user has placed in each position.
-  // null = empty (or pre-filled if in preFilled).
   const [slots, setSlots] = useState<(string | null)[]>(
-    () =>
-      elements.map((_, i) =>
-        spec.preFilled.includes(i) ? elements[i] : null
-      )
+    () => elements.map((_, i) => (spec.preFilled.includes(i) ? elements[i] : null))
   );
-
-  // Track which piece indices are used. We track by piece value + a unique id
-  // because there can be duplicate values.
-  const [usedPieces, setUsedPieces] = useState<Set<number>>(() => {
-    // Pre-fill: consume pieces matching the pre-filled elements.
-    const used = new Set<number>();
-    const available = spec.pieces.map((p, i) => ({ p, i }));
-    for (const idx of spec.preFilled) {
-      const target = elements[idx];
-      const found = available.find((a) => !used.has(a.i) && a.p === target);
-      if (found) used.add(found.i);
-    }
-    return used;
-  });
-
-  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [usedPieces, setUsedPieces] = useState<Set<number>>(() =>
+    computeUsedPieces(spec, elements, elements.map((_, i) => (spec.preFilled.includes(i) ? elements[i] : null)))
+  );
 
   const handlePieceClick = (pieceIdx: number) => {
     if (disabled || usedPieces.has(pieceIdx)) return;
-    // Find next empty slot (not pre-filled).
     const emptyIdx = slots.findIndex((s, i) => s === null && !spec.preFilled.includes(i));
     if (emptyIdx === -1) return;
     const newSlots = [...slots];
     newSlots[emptyIdx] = spec.pieces[pieceIdx];
     setSlots(newSlots);
-    setUsedPieces((prev) => new Set(prev).add(pieceIdx));
+    setUsedPieces(computeUsedPieces(spec, elements, newSlots));
   };
 
   const handleSlotClick = (slotIdx: number) => {
-    if (disabled || spec.preFilled.includes(slotIdx)) return;
-    if (slots[slotIdx] === null) return;
-    // Remove the piece from this slot.
-    const pieceValue = slots[slotIdx];
+    if (disabled || spec.preFilled.includes(slotIdx) || slots[slotIdx] === null) return;
     const newSlots = [...slots];
     newSlots[slotIdx] = null;
     setSlots(newSlots);
-    // Recompute usedPieces from the current slots + pre-filled pieces.
-    const preFilledPieces = new Set<number>();
-    const available = spec.pieces.map((p, i) => ({ p, i }));
-    for (const idx of spec.preFilled) {
-      const target = elements[idx];
-      const found = available.find((a) => !preFilledPieces.has(a.i) && a.p === target);
-      if (found) preFilledPieces.add(found.i);
-    }
-    const usedSet = new Set<number>(preFilledPieces);
-    const remainingPieces = available.filter((a) => !preFilledPieces.has(a.i));
-    const slotValues = newSlots.filter((s, i) => s !== null && !spec.preFilled.includes(i));
-    for (const sv of slotValues) {
-      const found = remainingPieces.find((a) => !usedSet.has(a.i) && a.p === sv);
-      if (found) usedSet.add(found.i);
-    }
-    setUsedPieces(usedSet);
+    setUsedPieces(computeUsedPieces(spec, elements, newSlots));
   };
 
   const handleClear = () => {
     if (disabled) return;
-    setSlots(elements.map((_, i) => (spec.preFilled.includes(i) ? elements[i] : null)));
-    // Rebuild usedPieces: only pre-filled.
-    const used = new Set<number>();
-    const available = spec.pieces.map((p, i) => ({ p, i }));
-    for (const idx of spec.preFilled) {
-      const target = elements[idx];
-      const found = available.find((a) => !used.has(a.i) && a.p === target);
-      if (found) used.add(found.i);
-    }
-    setUsedPieces(used);
+    const cleared = elements.map((_, i) => (spec.preFilled.includes(i) ? elements[i] : null));
+    setSlots(cleared);
+    setUsedPieces(computeUsedPieces(spec, elements, cleared));
   };
 
   const isComplete = slots.every((s) => s !== null);

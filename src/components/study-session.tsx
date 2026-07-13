@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Heart, Clock, CheckCircle2, XCircle } from "lucide-react";
-import { sessionGoal, sessionTimeLimitMs, sessionLives } from "@/lib/mastery";
+import { sessionGoal, sessionLives } from "@/lib/mastery";
 import { IntroductionFormat } from "./formats/introduction-format";
 import { PickAnswerFormat } from "./formats/pick-answer-format";
 import { SpotLieFormat } from "./formats/spot-lie-format";
@@ -30,23 +30,18 @@ import {
   genShellGame,
   genMemoryGrid,
 } from "@/lib/formats";
-import {
-  wordsEligibleForFormat,
-  wordsForIntroduction,
-  allFormatKinds,
-} from "@/lib/mastery";
+import { wordsEligibleForFormat, allFormatKinds } from "@/lib/mastery";
 import { FORMAT_DIFFICULTY, WordProgress } from "@/lib/types";
 
 interface ActiveFormat {
   kind: FormatKind;
   spec: QuestionSpec;
   wordIndex: number;
-  // For formats that serve multiple sub-questions (shell game), track sub-index.
   subQuestionIndex: number;
   totalSubQuestions: number;
 }
 
-// Module-level helper: tries to generate a spec for a single format + word.
+// Tries to generate a spec for a single format + word.
 function tryGenerate(
   lesson: Lesson,
   format: FormatKind,
@@ -73,43 +68,37 @@ function tryGenerate(
     case "memory-grid":
       return genMemoryGrid(lesson, word, mastery);
     case "match-pairs":
-      // Match-pairs is handled separately (needs multiple words).
-      return null;
+      return null; // handled separately (needs multiple words)
   }
 }
 
-// Module-level helper: builds the next active format from the lesson + store picker.
-// Tries the store-suggested format first; if its generator fails, falls back to
-// other eligible formats so the session doesn't end prematurely.
+// Builds the next active format. Tries the store-suggested format first;
+// if its generator fails, falls back to other eligible formats.
 function buildActiveFormat(
   lesson: Lesson,
   lessonId: string,
   pickSessionFormat: (lessonId: string) => FormatKind | null,
   recentFormats: FormatKind[]
 ): ActiveFormat | null {
-  // Try the store-suggested format first.
   const suggested = pickSessionFormat(lessonId);
 
-  // Build a list of formats to try, in priority order.
+  // Build a list of formats to try, suggested first, then all others.
   const formatsToTry: FormatKind[] = [];
   if (suggested) formatsToTry.push(suggested);
-
-  // Add all other formats as fallbacks (except introduction — only serve via suggestion).
   for (const f of allFormatKinds()) {
     if (f === "introduction") continue;
     if (!formatsToTry.includes(f)) formatsToTry.push(f);
   }
 
   for (const format of formatsToTry) {
-    // For match-pairs, handle specially (needs multiple words).
+    // Match-pairs needs multiple words — handle specially.
     if (format === "match-pairs") {
       const eligible = wordsEligibleForFormat(lesson, format);
-      if (eligible.length < 3) continue; // match-pairs needs >= 3 words
+      if (eligible.length < 3) continue;
       const matchWords = eligible
         .map((wp) => lesson.words[wp.wordIndex])
         .filter(Boolean);
-      const mastery = eligible[0].mastery;
-      const spec = genMatchPairs(lesson, matchWords, mastery);
+      const spec = genMatchPairs(lesson, matchWords, eligible[0].mastery);
       if (spec) {
         return {
           kind: format,
@@ -125,7 +114,6 @@ function buildActiveFormat(
     let words = wordsEligibleForFormat(lesson, format);
     if (words.length === 0) {
       if (format === "introduction") continue;
-      // Fallback: any seen word whose mastery >= format difficulty.
       const diff = FORMAT_DIFFICULTY[format];
       words = lesson.progress.filter((p) => p.seen && p.mastery >= diff);
       if (words.length === 0) continue;
@@ -136,14 +124,12 @@ function buildActiveFormat(
     for (const wp of shuffled.slice(0, 5)) {
       const spec = tryGenerate(lesson, format, wp);
       if (spec) {
-        let totalSub = 1;
-        if (format === "shell-game") totalSub = 3;
         return {
           kind: format,
           spec,
           wordIndex: wp.wordIndex,
           subQuestionIndex: 0,
-          totalSubQuestions: totalSub,
+          totalSubQuestions: format === "shell-game" ? 3 : 1,
         };
       }
     }
@@ -158,41 +144,44 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
   const endSession = useAppStore((s) => s.endSession);
   const pickSessionFormat = useAppStore((s) => s.pickSessionFormat);
   const recordAnswer = useAppStore((s) => s.recordAnswer);
-
-  const sessionQuestionsServed = useAppStore((s) => s.sessionQuestionsServed);
-  const sessionCorrect = useAppStore((s) => s.sessionCorrect);
-  const sessionIncorrect = useAppStore((s) => s.sessionIncorrect);
-  const sessionLivesLeft = useAppStore((s) => s.sessionLives);
-  const sessionEndAt = useAppStore((s) => s.sessionEndAt);
-  const sessionRecentFormats = useAppStore((s) => s.sessionRecentFormats);
+  const session = useAppStore((s) => s.session);
 
   const lesson = data.lessons.find((l) => l.id === lessonId);
-
-  // Build the initial active format lazily so we don't need an effect for it.
-  const buildInitial = useCallback((): ActiveFormat | null => {
-    if (!lesson) return null;
-    return buildActiveFormat(lesson, lessonId, pickSessionFormat, sessionRecentFormats);
-  }, [lesson, lessonId, pickSessionFormat, sessionRecentFormats]);
 
   const [active, setActive] = useState<ActiveFormat | null>(null);
   const [feedback, setFeedback] = useState<null | { correct: boolean; message?: string }>(null);
   const [timeLeft, setTimeLeft] = useState(mode === "rush" ? 300 : 0);
   const [sessionDone, setSessionDone] = useState(false);
   const [initTried, setInitTried] = useState(false);
+
   const goal = sessionGoal(mode);
   const livesStart = sessionLives(mode);
+  const sessionQuestionsServed = session?.questionsServed ?? 0;
+  const sessionCorrect = session?.correct ?? 0;
+  const sessionIncorrect = session?.incorrect ?? 0;
+  const sessionLivesLeft = session?.lives ?? 0;
+  const sessionEndAt = session?.endAt ?? 0;
+  const sessionRecentFormats = session?.recentFormats ?? [];
 
-  // If we haven't initialized yet and lesson is available, do it now.
-  // This is done during render (not in an effect) to avoid cascading renders.
+  // Build the next format spec.
+  const buildNext = useCallback((): ActiveFormat | null => {
+    if (!lesson) return null;
+    return buildActiveFormat(lesson, lessonId, pickSessionFormat, sessionRecentFormats);
+  }, [lesson, lessonId, pickSessionFormat, sessionRecentFormats]);
+
+  // Initialize the first format.
   if (!active && !sessionDone && !feedback && !initTried && lesson) {
     setInitTried(true);
-    const next = buildInitial();
-    if (!next) {
-      setSessionDone(true);
-    } else {
-      setActive(next);
-    }
+    const next = buildNext();
+    if (!next) setSessionDone(true);
+    else setActive(next);
   }
+
+  // Keep a ref to the latest buildNext so setTimeout callbacks avoid stale closures.
+  const buildNextRef = useRef(buildNext);
+  useEffect(() => {
+    buildNextRef.current = buildNext;
+  }, [buildNext]);
 
   // Timer for rush mode
   useEffect(() => {
@@ -207,19 +196,6 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
     }, 250);
     return () => clearInterval(interval);
   }, [mode, sessionEndAt, sessionDone]);
-
-  // Build the next format spec
-  const buildNext = useCallback((): ActiveFormat | null => {
-    if (!lesson) return null;
-    return buildActiveFormat(lesson, lessonId, pickSessionFormat, sessionRecentFormats);
-  }, [lesson, lessonId, pickSessionFormat, sessionRecentFormats]);
-
-  // Keep a ref to the latest buildNext so setTimeout callbacks always use
-  // the current version (avoids stale closure after store updates).
-  const buildNextRef = useRef(buildNext);
-  useEffect(() => {
-    buildNextRef.current = buildNext;
-  }, [buildNext]);
 
   const advance = useCallback(
     (currentActive: ActiveFormat | null, resultDone: boolean) => {
@@ -240,13 +216,9 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
         });
         return;
       }
-      // Use the ref to always get the latest buildNext.
       const next = buildNextRef.current();
-      if (!next) {
-        setSessionDone(true);
-      } else {
-        setActive(next);
-      }
+      if (!next) setSessionDone(true);
+      else setActive(next);
     },
     []
   );
@@ -266,7 +238,6 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
 
       setFeedback({ correct, message });
 
-      // After feedback, advance
       setTimeout(() => {
         setFeedback(null);
         advance(currentActive, result.done);
@@ -284,7 +255,6 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
     );
   }
 
-  // Session summary screen
   if (sessionDone) {
     return (
       <SessionSummary
@@ -375,7 +345,6 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
               <FormatRenderer
                 key={`${active.kind}-${active.subQuestionIndex}-${sessionQuestionsServed}`}
                 active={active}
-                lesson={lesson}
                 onAnswer={handleAnswer}
                 feedback={feedback}
               />
@@ -402,12 +371,10 @@ export function StudySession({ lessonId, mode }: { lessonId: string; mode: Study
 
 function FormatRenderer({
   active,
-  lesson,
   onAnswer,
   feedback,
 }: {
   active: ActiveFormat;
-  lesson: Lesson;
   onAnswer: (correct: boolean, message?: string) => void;
   feedback: null | { correct: boolean; message?: string };
 }) {
@@ -439,7 +406,6 @@ function FormatRenderer({
 // Regenerate the prompt for a shell game sub-question (same shells, new prompt).
 // Avoids repeating the same target as the previous sub-question.
 function regenerateShellPrompt(spec: Extract<QuestionSpec, { format: "shell-game" }>): typeof spec {
-  // Pick a new random shell, different from the current target.
   let newTarget = Math.floor(Math.random() * spec.shellItems.length);
   if (spec.shellItems.length > 1) {
     while (newTarget === spec.correctShell) {

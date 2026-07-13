@@ -22,7 +22,7 @@ export function FillGapFormat({ spec, onAnswer, disabled, feedback }: Props) {
 
   const [value, setValue] = useState("");
 
-  // Count underscores in the hint
+  // Count underscores in the hint (total chars the user must type).
   const underscoreCount = (spec.hint.match(/_+/g) || []).reduce((s, m) => s + m.length, 0);
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -32,19 +32,7 @@ export function FillGapFormat({ spec, onAnswer, disabled, feedback }: Props) {
     onAnswer(correct, correct ? undefined : `Correct: ${spec.fullAnswer}`);
   };
 
-  // Split hint into segments: text and underscore groups.
-  // We render the underscores as a single input that spans all gap positions.
-  // For simplicity, if there are multiple gap groups, we join them visually
-  // by replacing each underscore group with a single input-sized placeholder.
-  // But since the user types characters in order across all gaps, we use
-  // a single input field and display the hint with the first gap replaced
-  // by the input, and subsequent gaps shown as underscores (filled by the
-  // remaining typed chars).
-  //
-  // Actually, the cleanest UX: show the hint with ALL underscores, and have
-  // a single input field below where the user types the missing chars in order.
-
-  // Parse hint into segments
+  // Split hint into alternating text / underscore-group segments for display.
   const segments = spec.hint.split(/(_+)/);
 
   return (

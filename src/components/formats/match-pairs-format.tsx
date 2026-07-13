@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { MatchPairsSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
 
 interface Props {
   spec: MatchPairsSpec;
@@ -61,8 +61,6 @@ export function MatchPairsFormat({ spec, onAnswer, disabled, feedback }: Props) 
       }, 600);
     }
   };
-
-  const allMatched = Object.keys(matched).length === spec.correctPairs.length;
 
   return (
     <Card>

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { SpotLieSpec } from "@/lib/formats";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { X, Check } from "lucide-react";
 
 interface Props {
