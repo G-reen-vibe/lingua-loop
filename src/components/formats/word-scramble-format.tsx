@@ -66,29 +66,14 @@ export function WordScrambleFormat({ spec, onAnswer, disabled, feedback }: Props
     const newSlots = [...slots];
     newSlots[slotIdx] = null;
     setSlots(newSlots);
-    // Find the piece index to free. We need to find the FIRST used piece
-    // with this value that isn't accounted for by pre-fills.
-    // Simpler: track which piece index is in which slot.
-    // Actually let's rebuild usedPieces from slots.
-    const newUsed = new Set<number>();
+    // Recompute usedPieces from the current slots + pre-filled pieces.
     const preFilledPieces = new Set<number>();
-    // First mark pre-filled pieces
     const available = spec.pieces.map((p, i) => ({ p, i }));
     for (const idx of spec.preFilled) {
       const target = elements[idx];
       const found = available.find((a) => !preFilledPieces.has(a.i) && a.p === target);
       if (found) preFilledPieces.add(found.i);
     }
-    // Then mark pieces used in non-empty slots
-    const filledSlots = newSlots.filter((s) => s !== null).length;
-    let count = 0;
-    for (const a of available) {
-      if (preFilledPieces.has(a.i)) continue;
-      if (count < filledSlots - spec.preFilled.length) {
-        // This is approximate; we need to match by value.
-      }
-    }
-    // Better approach: just recompute usedPieces by matching slot values to pieces.
     const usedSet = new Set<number>(preFilledPieces);
     const remainingPieces = available.filter((a) => !preFilledPieces.has(a.i));
     const slotValues = newSlots.filter((s, i) => s !== null && !spec.preFilled.includes(i));

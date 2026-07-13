@@ -271,7 +271,25 @@ export function pickNextFormat(
 
   const targetDiff = Math.max(1, Math.min(4, Math.round(avgMastery)));
 
-  eligible.sort((a, b) => {
+  // Match-pairs is "served once" per setup — don't serve it twice in a row.
+  // Also avoid serving it too frequently (at most once every 5 questions).
+  const matchPairsCount = recentFormats.filter((f) => f === "match-pairs").length;
+  const lastFmt = recentFormats[recentFormats.length - 1];
+  const filteredEligible = eligible.filter((f) => {
+    if (f === "match-pairs") {
+      // Don't serve if last format was match-pairs.
+      if (lastFmt === "match-pairs") return false;
+      // Don't serve if we've already had match-pairs recently (within last 5).
+      if (matchPairsCount > 0 && recentFormats.length - recentFormats.lastIndexOf("match-pairs") < 5) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const pool = filteredEligible.length > 0 ? filteredEligible : eligible;
+
+  pool.sort((a, b) => {
     // Avoid repeating the most recent format at all costs.
     const aRecent = recentFormats[recentFormats.length - 1] === a ? 1 : 0;
     const bRecent = recentFormats[recentFormats.length - 1] === b ? 1 : 0;
@@ -284,7 +302,7 @@ export function pickNextFormat(
     return recentIdx(b) - recentIdx(a);
   });
 
-  return eligible[0];
+  return pool[0];
 }
 
 // ===== Session sizing =====
